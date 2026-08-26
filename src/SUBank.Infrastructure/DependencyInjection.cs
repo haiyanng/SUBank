@@ -7,6 +7,8 @@ using SUBank.Infrastructure.Persistence;
 using SUBank.Application.Abstractions;
 using SUBank.Infrastructure.Authentication;
 using SUBank.Infrastructure.Banking;
+using SUBank.Infrastructure.Sessions;
+using StackExchange.Redis;
 
 namespace SUBank.Infrastructure;
 
@@ -29,6 +31,19 @@ public static class DependencyInjection
             options.User.RequireUniqueEmail = false;
         }).AddRoles<IdentityRole>().AddEntityFrameworkStores<SUBankDbContext>();
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
+        var sessionOptions = configuration.GetSection(ActiveSessionOptions.SectionName).Get<ActiveSessionOptions>()
+            ?? throw new InvalidOperationException("Missing ActiveSession configuration.");
+        if (string.IsNullOrWhiteSpace(sessionOptions.RedisConnection))
+            throw new InvalidOperationException("ActiveSession:RedisConnection is required.");
+        services.Configure<ActiveSessionOptions>(configuration.GetSection(ActiveSessionOptions.SectionName));
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var redisOptions = ConfigurationOptions.Parse(sessionOptions.RedisConnection);
+            redisOptions.AbortOnConnectFail = false;
+            redisOptions.ConnectTimeout = 5_000;
+            return ConnectionMultiplexer.Connect(redisOptions);
+        });
+        services.AddSingleton<IActiveSessionStore, RedisActiveSessionStore>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IBankingService, BankingService>();
         services.AddScoped<IStaffService, StaffService>();

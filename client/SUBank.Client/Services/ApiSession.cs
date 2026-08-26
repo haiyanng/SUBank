@@ -18,6 +18,7 @@ public sealed class ApiSession(HttpClient httpClient)
     {
         if (Current is not null) return;
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/refresh");
+        request.Headers.Add("X-SUBank-CSRF", "1");
         request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
         using var response = await httpClient.SendAsync(request);
         if (!response.IsSuccessStatusCode) return;
@@ -39,6 +40,7 @@ public sealed class ApiSession(HttpClient httpClient)
     public async Task LogoutAsync()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/auth/logout");
+        request.Headers.Add("X-SUBank-CSRF", "1");
         request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
         await httpClient.SendAsync(request);
         Current = null;

@@ -16,13 +16,13 @@ using SUBank.Infrastructure.Persistence;
 
 namespace SUBank.IntegrationTests;
 
-public sealed class ApiSmokeTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
 {
     private const string AccountA = "1000000001";
     private const string AccountB = "1000000002";
-    private readonly WebApplicationFactory<Program> factory;
+    private readonly SUBankWebApplicationFactory factory;
 
-    public ApiSmokeTests(WebApplicationFactory<Program> factory) => this.factory = factory;
+    public ApiSmokeTests(SUBankWebApplicationFactory factory) => this.factory = factory;
 
     [Fact]
     public async Task HealthAndSwagger_AreAvailableInDevelopment()
@@ -35,7 +35,11 @@ public sealed class ApiSmokeTests : IClassFixture<WebApplicationFactory<Program>
     [Fact]
     public async Task Auth_LoginMeRefreshLogout_CompletesSessionLifecycle()
     {
-        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            HandleCookies = true,
+            BaseAddress = new Uri("https://localhost")
+        });
         var login = await LoginAsync(client, "customer.a");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
         var me = await client.GetFromJsonAsync<UserSummary>("/api/auth/me");
@@ -43,11 +47,21 @@ public sealed class ApiSmokeTests : IClassFixture<WebApplicationFactory<Program>
         Assert.Contains("Customer", me.Roles);
 
         client.DefaultRequestHeaders.Authorization = null;
-        var refresh = await client.PostAsync("/api/auth/refresh", null);
+        var refresh = await PostCookieProtectedAsync(client, "/api/auth/refresh");
         Assert.Equal(HttpStatusCode.OK, refresh.StatusCode);
         Assert.NotEqual(login.AccessToken, (await refresh.Content.ReadFromJsonAsync<AuthResponse>())!.AccessToken);
-        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync("/api/auth/logout", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/auth/refresh", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await PostCookieProtectedAsync(client, "/api/auth/logout")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await PostCookieProtectedAsync(client, "/api/auth/refresh")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Auth_SecondLoginInvalidatesFirstAccessToken()
+    {
+        using var first = await CreateAuthorizedClientAsync("customer.a");
+        using var second = await CreateAuthorizedClientAsync("customer.a");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await first.GetAsync("/api/auth/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await second.GetAsync("/api/auth/me")).StatusCode);
     }
 
     [Fact]
@@ -145,11 +159,10 @@ public sealed class ApiSmokeTests : IClassFixture<WebApplicationFactory<Program>
         try
         {
             using var firstClient = await CreateAuthorizedClientAsync("customer.a");
-            using var secondClient = await CreateAuthorizedClientAsync("customer.a");
             var request = new TransferRequest(AccountA, AccountB, amount, "Concurrent transfer", "123456");
             var responses = await Task.WhenAll(
                 PostWithIdempotencyAsync(firstClient, "/api/transfers", $"{prefix}-1", request),
-                PostWithIdempotencyAsync(secondClient, "/api/transfers", $"{prefix}-2", request));
+                PostWithIdempotencyAsync(firstClient, "/api/transfers", $"{prefix}-2", request));
             foreach (var response in responses) response.Dispose();
 
             Assert.Single(responses, x => x.StatusCode == HttpStatusCode.OK);
@@ -213,6 +226,13 @@ public sealed class ApiSmokeTests : IClassFixture<WebApplicationFactory<Program>
     {
         var request = new HttpRequestMessage(HttpMethod.Post, uri) { Content = JsonContent.Create(body) };
         request.Headers.Add("Idempotency-Key", key);
+        return client.SendAsync(request);
+    }
+
+    private static Task<HttpResponseMessage> PostCookieProtectedAsync(HttpClient client, string uri)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, uri);
+        request.Headers.Add("X-SUBank-CSRF", "1");
         return client.SendAsync(request);
     }
 

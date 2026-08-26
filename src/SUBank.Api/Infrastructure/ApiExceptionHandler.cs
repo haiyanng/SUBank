@@ -14,6 +14,7 @@ public sealed class ApiExceptionHandler(IProblemDetailsService problemDetailsSer
             NotFoundException => StatusCodes.Status404NotFound,
             ConflictException => StatusCodes.Status409Conflict,
             BusinessRuleException => StatusCodes.Status422UnprocessableEntity,
+            DependencyUnavailableException => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status500InternalServerError
         };
         if (status == 500) logger.LogError(exception, "Unhandled API exception");

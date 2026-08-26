@@ -13,6 +13,7 @@ public sealed class SUBankDbContext(DbContextOptions<SUBankDbContext> options)
     public DbSet<FinancialTransaction> FinancialTransactions => Set<FinancialTransaction>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
