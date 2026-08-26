@@ -58,6 +58,7 @@ Là Blazor WebAssembly UI, chỉ phụ thuộc Contracts. Client chứa page/com
 - Redis chỉ giữ active-session pointer, rate-limit counter và cache tham chiếu an toàn nếu thực sự cần. Không cache balance.
 - SignalR chỉ gửi realtime UX event sau khi database commit. Client phải gọi lại API để lấy balance chính xác.
 - OpenAI chỉ diễn giải kết quả read-only do backend đã authorization và tính toán xác định.
+- Statement là read model từ `FinancialTransaction`; PDF được QuestPDF render trong Infrastructure, không có bảng Statement và không cần Chromium.
 
 ## Staff Portal và phân quyền
 

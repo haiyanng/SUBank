@@ -171,6 +171,19 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: request workflow phải tách dữ liệu đề nghị khỏi profile authoritative; nếu update profile trước khi Admin duyệt thì approval chỉ còn là hình thức.
 
+## Entry 014 - P1 sao kê tháng/năm và PDF
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: authorized statement read model theo tháng/năm và PDF tối thiểu render phía server.
+- Tóm tắt prompt/công việc thực tế: AI merge address workflow và tạo `feature/account-statements`; sau đó bổ sung statement contract/service/controller, deterministic opening/closing balance, QuestPDF generator, Blazor query/download UI và integration test.
+- File/module bị tác động: Contracts/Application statement abstraction; Infrastructure query/PDF generator/package; API controller; Blazor page, download JavaScript và navigation; tests; README/Architecture/báo cáo.
+- Kiểm chứng đã thực hiện: restore; build 0 warning/0 error; 25/25 test pass. Test tạo transaction thật, kiểm tra debit/tổng/công thức closing balance, ownership `404`, month sai `422`, MIME PDF, kích thước và header `%PDF`.
+- Kết quả: không tạo bảng Statement. Opening balance được suy ra từ current SQL balance và net movement kể từ đầu kỳ; closing balance bằng opening + credit - debit. PDF không chứa secret và được authorization giống JSON endpoint.
+- Vấn đề còn lại: QuestPDF `2026.8.0` dùng Community License phù hợp dự án cá nhân/học tập; phải review lại license nếu chuyển sang tổ chức thương mại không còn đủ điều kiện. PDF hiện tối thiểu, trang trí nâng cao thuộc P2.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: file download cũng phải qua ownership authorization; không thể dùng anchor URL trực tiếp khi access token chỉ nằm trong memory, nên Client phải gọi API có Bearer token rồi tạo download.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:
