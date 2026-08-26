@@ -11,6 +11,7 @@ using SUBank.Infrastructure.Sessions;
 using StackExchange.Redis;
 using SUBank.Infrastructure.AddressChanges;
 using SUBank.Infrastructure.Statements;
+using SUBank.Infrastructure.Qr;
 
 namespace SUBank.Infrastructure;
 
@@ -52,6 +53,7 @@ public static class DependencyInjection
         services.AddScoped<IAddressChangeService, AddressChangeService>();
         services.AddScoped<IStatementService, StatementService>();
         services.AddSingleton<IStatementPdfGenerator, QuestStatementPdfGenerator>();
+        services.AddScoped<IQrService, QrService>();
         services.AddScoped<DatabaseInitializer>();
         return services;
     }

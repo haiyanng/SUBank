@@ -11,6 +11,7 @@ using SUBank.Contracts.Auth;
 using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Statements;
+using SUBank.Contracts.Qr;
 using SUBank.Contracts.Transfers;
 using SUBank.Domain.Entities;
 using SUBank.Infrastructure.Identity;
@@ -339,6 +340,32 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
                 (await customer.GetAsync($"/api/accounts/{AccountA}/statements?year={now.Year}&month=13")).StatusCode);
         }
         finally { await CleanupTransactionsAsync(key, before); }
+    }
+
+    [Fact]
+    public async Task Qr_GeneratesOwnedAccountAndDecodesItsImage()
+    {
+        using var customer = await CreateAuthorizedClientAsync("customer.a");
+        using var generatedResponse = await customer.PostAsJsonAsync("/api/qr/generate",
+            new GenerateQrRequest(AccountA, 250_000.50m, "QR integration"));
+        generatedResponse.EnsureSuccessStatusCode();
+        var generated = (await generatedResponse.Content.ReadFromJsonAsync<GeneratedQr>())!;
+        var png = Convert.FromBase64String(generated.PngBase64);
+        Assert.Equal(new byte[] { 137, 80, 78, 71 }, png[..4]);
+
+        using var multipart = new MultipartFormDataContent();
+        var image = new ByteArrayContent(png);
+        image.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        multipart.Add(image, "image", "subank.png");
+        using var decodedResponse = await customer.PostAsync("/api/qr/decode", multipart);
+        decodedResponse.EnsureSuccessStatusCode();
+        var decoded = (await decodedResponse.Content.ReadFromJsonAsync<QrTransferData>())!;
+        Assert.Equal(AccountA, decoded.AccountNumber);
+        Assert.Equal(250_000.50m, decoded.Amount);
+        Assert.Equal("QR integration", decoded.Message);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await customer.PostAsJsonAsync("/api/qr/generate",
+            new GenerateQrRequest(AccountB, null, null))).StatusCode);
     }
 
     private async Task<HttpClient> CreateAuthorizedClientAsync(string userName)
