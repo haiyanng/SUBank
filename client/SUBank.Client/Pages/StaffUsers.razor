@@ -1,0 +1,14 @@
+@page "/staff/users"
+@inject ApiSession Session
+<PageTitle>Người dùng bị khóa</PageTitle>
+<h1>Admin - Người dùng bị khóa</h1>
+@if (error is not null) { <div class="alert alert-danger">@error</div> }
+else if (users is null) { <p>Đang tải...</p> }
+else if (users.Count == 0) { <div class="alert alert-info">Hiện không có người dùng bị khóa.</div> }
+else { <table class="table"><thead><tr><th>Tên</th><th>Số lần sai</th><th></th></tr></thead><tbody>@foreach (var user in users) { <tr><td>@user.UserName</td><td>@user.FailedAttempts</td><td><button class="btn btn-sm btn-warning" @onclick="() => UnlockAsync(user.UserName)">Mở khóa</button></td></tr> }</tbody></table> }
+@code {
+    private List<LockedUserSummary>? users; private string? error;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync() { try { users = await Session.GetLockedUsersAsync() ?? []; } catch (Exception ex) { error = ex.Message; } }
+    private async Task UnlockAsync(string name) { try { await Session.UnlockAsync(name); await LoadAsync(); } catch (Exception ex) { error = ex.Message; } }
+}

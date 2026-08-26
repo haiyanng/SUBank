@@ -1,0 +1,32 @@
+@page "/accounts"
+@inject ApiSession Session
+
+<PageTitle>Tài khoản</PageTitle>
+<h1>Tài khoản của tôi</h1>
+@if (error is not null) { <div class="alert alert-danger">@error</div> }
+else if (accounts is null) { <p>Đang tải...</p> }
+else if (accounts.Count == 0) { <div class="alert alert-warning">Không có tài khoản hoặc chưa đăng nhập đúng vai trò Customer.</div> }
+else
+{
+    <div class="row g-3">
+        @foreach (var account in accounts)
+        {
+            <div class="col-12 col-md-6"><div class="card shadow-sm"><div class="card-body">
+                <div class="text-body-secondary">@account.AccountNumber</div>
+                <div class="fs-3 fw-bold">@account.Balance.ToString("N2") @account.Currency</div>
+                <span class="badge text-bg-success">@account.Status</span>
+                <a class="btn btn-outline-primary btn-sm ms-2" href="transactions/@account.AccountNumber">Lịch sử</a>
+            </div></div></div>
+        }
+    </div>
+}
+
+@code {
+    private List<AccountSummary>? accounts;
+    private string? error;
+    protected override async Task OnInitializedAsync()
+    {
+        try { accounts = await Session.GetAccountsAsync() ?? []; }
+        catch (Exception ex) { error = ex.Message; }
+    }
+}

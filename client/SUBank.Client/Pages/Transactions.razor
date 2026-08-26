@@ -1,0 +1,14 @@
+@page "/transactions/{AccountNumber}"
+@inject ApiSession Session
+<PageTitle>Lịch sử giao dịch</PageTitle>
+<h1>Lịch sử @AccountNumber</h1>
+@if (error is not null) { <div class="alert alert-danger">@error</div> }
+else if (items is null) { <p>Đang tải...</p> }
+else { <div class="table-responsive"><table class="table"><thead><tr><th>Mã</th><th>Loại</th><th>Số tiền</th><th>Thời gian</th></tr></thead><tbody>
+@foreach (var item in items) { <tr><td><a href="transaction/@item.ReferenceNo">@item.ReferenceNo</a></td><td>@item.Type</td><td>@item.Amount.ToString("N2")</td><td>@item.CreatedAtUtc.ToLocalTime()</td></tr> }
+</tbody></table></div> }
+@code {
+    [Parameter] public string AccountNumber { get; set; } = "";
+    private List<TransactionSummary>? items; private string? error;
+    protected override async Task OnParametersSetAsync() { try { items = await Session.GetTransactionsAsync(AccountNumber) ?? []; } catch (Exception ex) { error = ex.Message; } }
+}

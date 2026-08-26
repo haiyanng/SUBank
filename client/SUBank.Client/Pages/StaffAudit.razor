@@ -1,0 +1,27 @@
+@page "/staff/audit"
+@inject ApiSession Session
+
+<PageTitle>Nhật ký kiểm toán</PageTitle>
+<h1>Admin - Nhật ký kiểm toán</h1>
+@if (error is not null) { <div class="alert alert-danger">@error</div> }
+else if (items is null) { <p>Đang tải...</p> }
+else
+{
+    <div class="table-responsive"><table class="table table-sm align-middle">
+        <thead><tr><th>Thời gian</th><th>Hành động</th><th>Kết quả</th><th>Đối tượng</th></tr></thead>
+        <tbody>@foreach (var item in items)
+        {
+            <tr><td>@item.CreatedAtUtc.ToLocalTime()</td><td>@item.Action</td><td>@item.Result</td><td>@item.EntityType @item.EntityId</td></tr>
+        }</tbody>
+    </table></div>
+}
+
+@code {
+    private List<AuditLogSummary>? items;
+    private string? error;
+    protected override async Task OnInitializedAsync()
+    {
+        try { items = await Session.GetAuditLogsAsync() ?? []; }
+        catch (Exception ex) { error = ex.Message; }
+    }
+}
