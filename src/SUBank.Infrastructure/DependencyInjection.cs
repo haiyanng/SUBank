@@ -9,6 +9,7 @@ using SUBank.Infrastructure.Authentication;
 using SUBank.Infrastructure.Banking;
 using SUBank.Infrastructure.Sessions;
 using StackExchange.Redis;
+using SUBank.Infrastructure.AddressChanges;
 
 namespace SUBank.Infrastructure;
 
@@ -47,6 +48,7 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IBankingService, BankingService>();
         services.AddScoped<IStaffService, StaffService>();
+        services.AddScoped<IAddressChangeService, AddressChangeService>();
         services.AddScoped<DatabaseInitializer>();
         return services;
     }

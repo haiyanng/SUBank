@@ -14,6 +14,7 @@ public sealed class SUBankDbContext(DbContextOptions<SUBankDbContext> options)
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<AddressChangeRequest> AddressChangeRequests => Set<AddressChangeRequest>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
