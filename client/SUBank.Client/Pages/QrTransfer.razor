@@ -4,7 +4,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 
-<PageTitle>SUBank QR</PageTitle><h1>SUBank QR nội bộ</h1>
+<PageTitle>QR · SUBank</PageTitle><div class="page-heading"><div><div class="eyebrow">QR nội bộ</div><h1 class="mb-1">QR</h1><p>Tạo mã nhận tiền hoặc quét ảnh để điền trước giao dịch.</p></div></div>
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
 <div class="row g-4"><div class="col-12 col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
     <h2 class="h4">Tạo QR nhận tiền</h2>
@@ -23,10 +23,11 @@
     @if (decoded is not null) { <div class="alert alert-success mt-3"><div>Tài khoản: <strong>@decoded.AccountNumber</strong></div><div>Số tiền: @(decoded.Amount?.ToString("N2") ?? "Chưa nhập")</div><div>Nội dung: @decoded.Message</div><button class="btn btn-success mt-2" @onclick="ContinueTransfer">Tiếp tục chuyển tiền</button></div> }
 </div></div></div></div>
 @code {
+    [SupplyParameterFromQuery(Name = "account")] public string? Account { get; set; }
     private const long MaxImageBytes = 5 * 1024 * 1024;
     private string generateAccount = ""; private decimal? generateAmount; private string? generateMessage;
     private GeneratedQr? generated; private QrTransferData? decoded; private string? error; private bool busy;
-    protected override async Task OnInitializedAsync() { var accounts = await Session.GetAccountsAsync(); generateAccount = accounts?.FirstOrDefault()?.AccountNumber ?? ""; }
+    protected override async Task OnInitializedAsync() { var accounts = await Session.GetAccountsAsync(); generateAccount = accounts?.FirstOrDefault(x => x.AccountNumber == Account)?.AccountNumber ?? accounts?.FirstOrDefault()?.AccountNumber ?? ""; }
     private async Task GenerateAsync() { await RunAsync(async () => generated = await Session.GenerateQrAsync(new(generateAccount, generateAmount, generateMessage))); }
     private async Task StartCameraAsync() { try { await JS.InvokeVoidAsync("subankCamera.start", "subank-qr-camera"); } catch { error = "Không mở được camera. Hãy cấp quyền camera hoặc tải ảnh QR lên."; } }
     private async Task CaptureAsync() { await RunAsync(async () => { var base64 = await JS.InvokeAsync<string>("subankCamera.capture", "subank-qr-camera"); decoded = await Session.DecodeQrAsync(Convert.FromBase64String(base64), "camera.jpg", "image/jpeg"); }); }

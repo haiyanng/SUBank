@@ -1,12 +1,12 @@
 @page "/staff/address-changes"
 @inject ApiSession Session
 
-<PageTitle>Duyệt đổi địa chỉ</PageTitle>
-<h1>Duyệt đổi địa chỉ</h1>
+<PageTitle>Duyệt đổi địa chỉ · SUBank</PageTitle>
+<div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Duyệt đổi địa chỉ</h1><p>Kiểm tra đề nghị trước khi cập nhật hồ sơ khách hàng.</p></div></div>
 @if (message is not null) { <div class="alert alert-success">@message</div> }
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
-@if (items is null) { <p>Đang tải...</p> }
-else if (items.Count == 0) { <div class="alert alert-info">Không có yêu cầu chờ xử lý.</div> }
+@if (items is null) { <div class="loading-state">Đang tải yêu cầu...</div> }
+else if (items.Count == 0) { <div class="empty-state">Không có yêu cầu chờ xử lý.</div> }
 else { <div class="row g-3">@foreach (var item in items) { <div class="col-12"><div class="card shadow-sm"><div class="card-body">
     <div class="d-flex justify-content-between"><strong>@item.CustomerName</strong><span>@item.RequestNo</span></div>
     <p class="mb-1"><span class="text-body-secondary">Thường trú:</span> @item.PermanentAddress</p>

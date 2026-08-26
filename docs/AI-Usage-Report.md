@@ -197,6 +197,123 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: QR phải được coi là input không đáng tin cậy; giới hạn MIME/dung lượng/kích thước ảnh, allow-list scheme/version và rate limit decode ngăn parser ảnh trở thành đường tấn công. Dùng ImageSharp managed binding giúp môi trường deploy container không phụ thuộc native graphics library.
 
+## Entry 016 - Hoàn thiện giao diện phục vụ demo
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: chuẩn hóa visual system Bootstrap và UX responsive cho các luồng demo hiện có; không thêm business feature và không triển khai AI.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu hoàn thiện giao diện chạy thật trước khi dựng Figma, sau đó yêu cầu màn hình đăng nhập mang tinh thần VietinBank iPay và giao diện sau đăng nhập tham khảo SUBank V1. AI audit toàn bộ Blazor page, tạo branch `feature/frontend-polish`, đối chiếu source V1 công khai, rồi chuyển visual system sang đen/vàng `#111111` - `#B58A32` - `#9C7427` - `#E8D5AE` mà không sao chép React hay thêm thư viện UI mới.
+- File/module bị tác động: Blazor layout/navigation và AuthLayout; global CSS; Home/Login/Forbidden/NotFound; Customer account/transaction/transfer/statement/QR/address pages; Teller deposit; Admin locked-user/audit/address pages; logo do chủ dự án cung cấp; README và báo cáo này.
+- Kiểm chứng đã thực hiện: build toàn solution 0 warning/0 error; 32/32 test pass; API `/health`, Swagger và Client HTTPS hoạt động. Sau khi chủ dự án cài Redis, browser automation đã đăng nhập thật bằng Customer, tải dữ liệu thật và chụp kiểm tra login ở 775px, dashboard ở 1440px và 775px.
+- Kết quả: URL gốc mở thẳng login; logo corgi và chữ SUBank không còn bị cắt khi thu cửa sổ; form tự chuyển một cột trước 992px. Giao diện sau đăng nhập dùng sidebar đen trên desktop, topbar/menu trượt trên tablet-mobile, thẻ tài khoản vàng/đen, quick action và màu trạng thái có ý nghĩa nghiệp vụ. Landing page giới thiệu `/welcome` được loại bỏ; logo SUBank điều hướng thẳng về màn hình chính của Customer, Teller hoặc Admin. Navigation vẫn hiển thị đúng theo vai trò và tái sử dụng toàn bộ API/luồng V2 hiện có.
+- Vấn đề còn lại: cần chủ dự án review trực quan trên trình duyệt/màn hình thật; Figma tiếp tục giữ `PENDING` cho đến khi UI code được chốt. Chưa kiểm thử camera QR trên thiết bị di động thật.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: breakpoint phải dựa trên độ rộng nội dung thực tế chứ không chỉ tên thiết bị; mốc 768px vẫn làm lockup thương hiệu tràn ở viewport 775px nên phải chuyển layout tại 992px. Tham khảo dự án cũ hiệu quả nhất khi giữ lại ngôn ngữ thiết kế tốt nhưng loại bỏ công nghệ và chức năng không còn phù hợp. Figma nên phản ánh UI đã được chạy và review thay vì đi trước một giao diện còn thay đổi.
+
+## Entry 017 - Bổ sung tài khoản demo thứ hai cho mỗi Customer
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: bổ sung seed Development để hai Customer demo đều có hai tài khoản ngân hàng.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu thêm cho mỗi Customer một tài khoản thứ hai. AI kiểm tra quan hệ dữ liệu hiện hữu, xác nhận `CustomerProfile` đã hỗ trợ nhiều `BankAccount`, rồi mở rộng seed mà không đổi schema hoặc tạo migration.
+- File/module bị tác động: `DatabaseInitializer`, README, tài liệu thiết kế database và báo cáo này.
+- Kiểm chứng đã thực hiện: chỉ chạy build theo quyết định hiện tại của chủ dự án; không viết hoặc chạy test trong giai đoạn hoàn thiện tính năng.
+- Kết quả: `customer.a` có `1000000001` và `1000000003`; `customer.b` có `1000000002` và `1000000004`. Seed chỉ thêm account còn thiếu, không tạo trùng và không đặt lại balance của account đã tồn tại.
+- Vấn đề còn lại: kiểm thử tự động và kiểm thử hồi quy seed được hoãn đến giai đoạn hoàn thiện project theo yêu cầu của chủ dự án.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: dữ liệu seed chạy nhiều lần phải giữ tính idempotent và không được ghi đè trạng thái nghiệp vụ mà người dùng đã tạo trong database hiện hữu.
+
+## Entry 018 - Tinh gọn bộ chọn tài khoản và nhóm thao tác
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: tinh gọn dashboard Customer sau khi bổ sung tài khoản thứ hai; không thay đổi API hoặc nghiệp vụ ngân hàng.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu chỉ hiển thị một thẻ tài khoản, dùng nút thả xuống để đổi tài khoản đang xem, gom các hành động ra cùng một khu vực, rút gọn nhãn QR/Sao kê và đồng bộ icon màu vàng trên nền nhạt.
+- File/module bị tác động: trang `Accounts.razor`, global visual system trong `app.css` và báo cáo này.
+- Kiểm chứng đã thực hiện: chỉ chạy build Client theo quyết định hiện tại của chủ dự án; không viết hoặc chạy test trong giai đoạn hoàn thiện tính năng.
+- Kết quả: account đầu tiên mặc định là tài khoản chính; account thứ hai có thể chọn từ dropdown. Lịch sử giao dịch luôn dùng account đang chọn. Năm thao tác Lịch sử, Chuyển tiền, Sao kê, QR và Đổi địa chỉ dùng bộ SVG nhất quán, màu vàng và nền nhạt; không còn action trùng trong thẻ hoặc tiêu đề “Thao tác nhanh”.
+- Vấn đề còn lại: cần chủ dự án review trực quan tương tác dropdown và khoảng cách ở màn hình thật; kiểm thử tự động được hoãn theo yêu cầu.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: khi một màn hình có nhiều account, nên giữ một điểm tập trung và cho user đổi context; mọi action phụ thuộc account phải đọc cùng context đang chọn để tránh gây hiểu nhầm.
+
+## Entry 019 - Hoàn thiện điều hướng Customer và hồ sơ chỉ đọc
+
+- Ngày: 2026-08-27
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sắp xếp lại menu và nhóm thao tác của Customer, di chuyển bộ chọn tài khoản, đồng thời bổ sung trang xem hồ sơ của chính Customer đang đăng nhập.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu menu có Trang chủ, Thông tin khách hàng và QR; QR nằm giữa nhóm thao tác, Lịch sử giao dịch nằm cuối và nút chọn tài khoản ở góc dưới thẻ. AI kiểm tra source để tránh tạo liên kết chết, xác nhận chưa có profile API/UI rồi triển khai lát cắt đọc hồ sơ tối thiểu xuyên Contracts, Application, Infrastructure, API và Blazor.
+- File/module bị tác động: Customer navigation; trang Accounts và global CSS; profile contract/service/controller/page; đăng ký dependency injection; ApiSession; README và báo cáo này.
+- Kiểm chứng đã thực hiện: build toàn solution; không viết hoặc chạy test theo quyết định hiện tại của chủ dự án trong giai đoạn hoàn thiện tính năng.
+- Kết quả: menu Customer dùng nhãn Trang chủ, QR và Thông tin khách hàng. Năm thao tác được sắp theo thứ tự Chuyển tiền, Sao kê, QR, Đổi địa chỉ, Lịch sử giao dịch. Bộ chọn tài khoản nằm ở góc dưới bên phải thẻ, danh sách mở lên trên và cuộn khi dài; tài khoản đang chọn được truyền đúng sang Chuyển tiền, Sao kê, QR và Lịch sử. `/api/profile` chỉ lấy hồ sơ từ user ID trong access token, chỉ cho role Customer, không nhận ID từ Client, không trả khóa database và che CCCD/CMND trước khi trả response.
+- Vấn đề còn lại: cần chủ dự án review trực quan trên màn hình thật; kiểm thử tự động được hoãn đến giai đoạn hoàn thiện project theo yêu cầu.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: một mục menu phải dẫn tới luồng hoạt động thật thay vì trang giả; API hồ sơ cá nhân nên suy ra chủ sở hữu từ authentication context và tối thiểu hóa PII ngay trong response.
+
+## Entry 020 - Customer đăng nhập bắt buộc bằng số điện thoại
+
+- Ngày: 2026-08-27
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: đổi login identifier của Customer sang đúng số điện thoại trong hồ sơ, giữ username nghiệp vụ cho Teller/Admin.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tên đăng nhập Customer bắt buộc là số điện thoại của chính Customer. AI audit Identity, authentication, seed, profile, giao diện và tài liệu; sau đó bổ sung quy tắc số điện thoại chuẩn 10 chữ số, kiểm tra ánh xạ khi login và cơ chế đổi username seed cũ tại chỗ.
+- File/module bị tác động: Application customer-login rule; Infrastructure AuthService và DatabaseInitializer; Login, Customer dashboard/sidebar; README, Blueprint, Security Design, Database Design và báo cáo này.
+- Kiểm chứng đã thực hiện: build toàn solution; không viết hoặc chạy test theo quyết định hiện tại của chủ dự án trong giai đoạn hoàn thiện tính năng.
+- Kết quả: `0900000001` và `0900000002` là login Customer Development; `teller` và `admin` không đổi. Seed dùng `UserManager.SetUserNameAsync` để giữ nguyên `UserId`, profile, account, transaction, audit và session history. Auth từ chối Customer nếu username không đúng định dạng hoặc không trùng `CustomerProfile.Phone`. UI dùng họ tên để chào và che bớt số điện thoại ở sidebar.
+- Vấn đề còn lại: integration test hiện còn fixture `customer.a`/`customer.b` và sẽ được cập nhật khi dự án quay lại giai đoạn kiểm thử theo yêu cầu. Nếu làm chức năng đổi số điện thoại, phải cập nhật profile/username nguyên tử và thu hồi phiên đăng nhập cũ.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: đổi login identifier là thay đổi dữ liệu định danh chứ không chỉ đổi label giao diện; phải giữ khóa user ổn định, fail-fast khi có xung đột và xác định rõ nguồn sự thật để tránh hai giá trị lệch nhau.
+
+## Entry 021 - Cân chỉnh tagline thương hiệu trên màn hình đăng nhập
+
+- Ngày: 2026-08-27
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: tăng kích thước và độ giãn chữ của tagline `Simple. Secure. Seamless.` trên màn hình đăng nhập.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tagline lớn hơn và có chiều dài thị giác gần bằng cụm logo cùng chữ SUBank, sau đó chốt giữ khoảng cách ký tự ban đầu. AI điều chỉnh responsive font-size riêng cho login và giữ `letter-spacing: .18em`, không thay đổi tagline sidebar hay nghiệp vụ.
+- File/module bị tác động: `Login.razor.css` và báo cáo này.
+- Kiểm chứng đã thực hiện: build Client; không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: tagline desktop lớn và trải ngang gần bằng brand lockup bằng cỡ chữ thay vì kéo giãn ký tự; tablet/mobile có cỡ chữ riêng để không tràn màn hình nhỏ.
+- Vấn đề còn lại: cần chủ dự án review trực quan trên màn hình thật.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: độ dài thị giác của tagline phụ thuộc đồng thời vào font-size và letter-spacing; breakpoint nhỏ cần giảm cả hai thay vì chỉ thu cỡ chữ.
+
+## Entry 022 - Chuyển logo corgi thành wordmark SUBank 3S
+
+- Ngày: 2026-08-27
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: thay logo ảnh corgi bằng wordmark chữ `SUBank 3S` trên toàn bộ giao diện.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu giữ chữ SUBank, thêm ký hiệu 3S cách điệu đơn giản phía sau và dùng cả cụm làm logo. AI rà soát mọi tham chiếu ảnh, tạo component Blazor dùng chung rồi thay tại login, sidebar và mobile header.
+- File/module bị tác động: component `BrandWordmark`; Login; NavMenu; global CSS, scoped CSS; favicon SVG, host page và báo cáo này.
+- Kiểm chứng đã thực hiện: build Client; không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: `SU` dùng màu vàng chủ đạo, `Bank` dùng màu tương phản theo nền; `3S` cao bằng SUBank, đứng cùng baseline và dùng nét vàng đậm tối giản, không có khung hoặc nền huy hiệu. Logo là HTML/CSS nên sắc nét ở mọi kích thước và có accessible label `SUBank 3S`; ảnh corgi không còn được giao diện tham chiếu. Favicon Blazor mặc định được thay bằng monogram `3S` cùng bảng màu.
+- Vấn đề còn lại: file ảnh corgi được giữ lại nhưng không sử dụng để có thể hoàn tác; cần chủ dự án review tỷ lệ wordmark trên màn hình thật.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: wordmark nên là component dùng chung thay vì lặp markup; CSS custom property giúp mỗi layout điều chỉnh kích thước mà không phân nhánh component.
+
+## Entry 023 - Khắc phục màn hình trắng của Blazor WebAssembly
+
+- Ngày: 2026-08-27
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: chẩn đoán và khôi phục môi trường chạy Client sau khi giao diện chỉ hiển thị trang trắng.
+- Tóm tắt prompt/công việc thực tế: chủ dự án báo Client hiện trang trắng sau thay đổi wordmark. AI kiểm tra tiến trình và log Development Server, xác định lỗi nằm ở bộ file sinh ra và runtime WebAssembly thay vì CSS/logo, sau đó dừng tiến trình lỗi, clean output, restore rõ runtime `browser-wasm`, build và khởi động lại Client.
+- File/module bị tác động: output sinh tự động trong `client/SUBank.Client/bin` và `client/SUBank.Client/obj`; source giao diện không cần sửa để xử lý sự cố. Báo cáo này được cập nhật để lưu dấu vết.
+- Kiểm chứng đã thực hiện: Client build thành công với 0 warning, 0 error; tiến trình chạy không còn exception; trang gốc, isolated CSS, JavaScript runtime có fingerprint và Client WASM đều trả HTTP 200. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: Client hoạt động lại tại `https://localhost:7081`; nguyên nhân là runtime pack `browser-wasm` chưa đầy đủ cùng output cũ sau khi môi trường .NET thay đổi, không phải thay đổi giao diện `SUBank 3S`.
+- Vấn đề còn lại: trình duyệt đã mở từ trước có thể giữ asset/cache cũ; cần hard refresh hoặc mở tab riêng tư để nhận manifest và fingerprint mới.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: với Blazor WebAssembly, trang HTML có thể trả 200 nhưng UI vẫn trắng nếu runtime hoặc assembly fingerprint bị thiếu; khi chẩn đoán phải kiểm tra đồng thời log host, JavaScript runtime và file WASM, không chỉ kiểm tra endpoint gốc.
+
+## Entry 024 - Chuẩn hóa nội dung ô tên đăng nhập
+
+- Ngày: 2026-08-27
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: rút gọn nội dung hiển thị của trường đăng nhập.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu bỏ câu hướng dẫn riêng cho Customer và chỉ hiển thị nội dung chung là tên đăng nhập.
+- File/module bị tác động: trang `Login.razor` và báo cáo này.
+- Kiểm chứng đã thực hiện: build Client; không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: nhãn hiển thị `Tên đăng nhập`, placeholder hiển thị `Nhập tên đăng nhập`; quy tắc Customer dùng số điện thoại ở backend không thay đổi.
+- Vấn đề còn lại: không có.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: nội dung UI có thể dùng thuật ngữ chung để form gọn hơn, trong khi quy tắc định danh và kiểm tra bảo mật vẫn phải được giữ ở backend.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:

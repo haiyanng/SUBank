@@ -1,21 +1,40 @@
 @page "/transaction/{ReferenceNo}"
 @inject ApiSession Session
 
-<PageTitle>Chi tiết giao dịch</PageTitle>
-<h1>Chi tiết giao dịch</h1>
-@if (error is not null) { <div class="alert alert-danger">@error</div> }
-else if (item is null) { <p>Đang tải...</p> }
+<PageTitle>Chi tiết giao dịch · SUBank</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Lịch sử giao dịch</div>
+        <h1 class="mb-1">Chi tiết giao dịch</h1>
+        <p>Thông tin được truy xuất trực tiếp theo mã tham chiếu.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="accounts">Quay lại tài khoản</a>
+</div>
+
+@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+else if (item is null) { <div class="loading-state">Đang tải chi tiết giao dịch...</div> }
 else
 {
-    <dl class="row card card-body shadow-sm">
-        <dt class="col-sm-4">Mã tham chiếu</dt><dd class="col-sm-8">@item.ReferenceNo</dd>
-        <dt class="col-sm-4">Loại giao dịch</dt><dd class="col-sm-8">@item.Type</dd>
-        <dt class="col-sm-4">Tài khoản nguồn</dt><dd class="col-sm-8">@(item.SourceAccountNumber ?? "Tiền mặt")</dd>
-        <dt class="col-sm-4">Tài khoản nhận</dt><dd class="col-sm-8">@item.DestinationAccountNumber</dd>
-        <dt class="col-sm-4">Số tiền</dt><dd class="col-sm-8 fw-bold">@item.Amount.ToString("N2") VND</dd>
-        <dt class="col-sm-4">Nội dung</dt><dd class="col-sm-8">@(item.Description ?? "—")</dd>
-        <dt class="col-sm-4">Thời gian</dt><dd class="col-sm-8">@item.CreatedAtUtc.ToLocalTime()</dd>
-    </dl>
+    <article class="card detail-card">
+        <div class="card-body p-lg-4">
+            <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-3">
+                <div>
+                    <div class="metric-label">Số tiền giao dịch</div>
+                    <div class="h2 fw-bold money mb-0">@item.Amount.ToString("N0") VND</div>
+                </div>
+                <span class="badge rounded-pill text-bg-success align-self-start align-self-sm-center">Hoàn tất</span>
+            </div>
+            <dl class="detail-list">
+                <div><dt>Mã tham chiếu</dt><dd>@item.ReferenceNo</dd></div>
+                <div><dt>Loại giao dịch</dt><dd>@item.Type</dd></div>
+                <div><dt>Tài khoản nguồn</dt><dd>@(item.SourceAccountNumber ?? "Tiền mặt")</dd></div>
+                <div><dt>Tài khoản nhận</dt><dd>@item.DestinationAccountNumber</dd></div>
+                <div><dt>Nội dung</dt><dd>@(item.Description ?? "—")</dd></div>
+                <div><dt>Thời gian</dt><dd>@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd></div>
+            </dl>
+        </div>
+    </article>
 }
 
 @code {

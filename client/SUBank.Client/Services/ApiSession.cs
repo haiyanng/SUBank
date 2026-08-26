@@ -7,6 +7,7 @@ using SUBank.Contracts.Auth;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Statements;
 using SUBank.Contracts.Qr;
+using SUBank.Contracts.Profiles;
 using SUBank.Contracts.Transactions;
 using SUBank.Contracts.Transfers;
 
@@ -59,6 +60,7 @@ public sealed class ApiSession(HttpClient httpClient)
         Changed?.Invoke();
     }
     public Task<List<AccountSummary>?> GetAccountsAsync() => GetAsync<List<AccountSummary>>("api/accounts");
+    public Task<CustomerProfileDetail?> GetProfileAsync() => GetAsync<CustomerProfileDetail>("api/profile");
     public Task<List<TransactionSummary>?> GetTransactionsAsync(string account) => GetAsync<List<TransactionSummary>>($"api/accounts/{account}/transactions");
     public Task<TransactionDetail?> GetTransactionAsync(string referenceNo) => GetAsync<TransactionDetail>($"api/transactions/{referenceNo}");
     public Task<AccountStatement?> GetStatementAsync(string accountNumber, int year, int? month) =>

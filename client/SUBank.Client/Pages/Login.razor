@@ -1,42 +1,94 @@
+@page "/"
 @page "/login"
-
+@layout AuthLayout
 @inject ApiSession Session
 @inject NavigationManager Navigation
 
-<PageTitle>Đăng nhập</PageTitle>
+<PageTitle>Đăng nhập · SUBank</PageTitle>
 
-<div class="row justify-content-center py-4">
-    <div class="col-12 col-md-7 col-lg-5">
-        <div class="card shadow-sm">
-            <div class="card-body p-4">
-                <h1 class="h3">Đăng nhập SUBank</h1>
-                <p class="text-body-secondary">Tài khoản demo: customer.a, customer.b, teller hoặc admin.</p>
-                <EditForm Model="model" OnValidSubmit="LoginAsync">
-                    <DataAnnotationsValidator />
-                    <div class="mb-3"><label class="form-label">Tên đăng nhập</label><InputText class="form-control" @bind-Value="model.UserName" /></div>
-                    <div class="mb-3"><label class="form-label">Mật khẩu</label><InputText type="password" class="form-control" @bind-Value="model.Password" /></div>
-                    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
-                    <button class="btn btn-primary w-100" disabled="@busy">@(busy ? "Đang đăng nhập..." : "Đăng nhập")</button>
-                </EditForm>
+<div class="login-page">
+    <div class="decor decor-one"></div>
+    <div class="decor decor-two"></div>
+
+    <main class="login-container">
+        <header class="brand-area">
+            <div class="brand-lockup">
+                <BrandWordmark />
             </div>
-        </div>
-    </div>
+            <p>Simple. Secure. Seamless.</p>
+        </header>
+
+        <section class="login-card">
+            <div class="card-heading">
+                <h1>Đăng nhập để tiếp tục</h1>
+                <p>Chào mừng bạn trở lại SUBank</p>
+            </div>
+
+            <EditForm Model="model" OnValidSubmit="LoginAsync">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <label class="form-label" for="username">Tên đăng nhập</label>
+                    <InputText id="username" autocomplete="username" class="form-control" placeholder="Nhập tên đăng nhập" @bind-Value="model.UserName" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="password">Mật khẩu</label>
+                    <div class="password-field">
+                        <InputText id="password" type="@(showPassword ? "text" : "password")" autocomplete="current-password" class="form-control" placeholder="Nhập mật khẩu" @bind-Value="model.Password" />
+                        <button type="button" aria-label="@(showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu")" @onclick="TogglePassword">@(showPassword ? "Ẩn" : "Hiện")</button>
+                    </div>
+                </div>
+
+                <div class="text-end mb-3">
+                        <button type="button" class="forgot-link" @onclick="ShowForgotPassword">Quên tên đăng nhập / Mật khẩu?</button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(info)) { <div class="alert alert-info py-2" role="status">@info</div> }
+                @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger py-2" role="alert">@error</div> }
+
+                <button class="btn btn-gold w-100" disabled="@busy">@(busy ? "Đang xác thực..." : "Đăng nhập")</button>
+            </EditForm>
+        </section>
+
+        <footer>SUBank V2.4 · Sản phẩm mô phỏng phục vụ học tập</footer>
+    </main>
 </div>
 
 @code {
-    private readonly LoginModel model = new() { UserName = "customer.a", Password = "Demo@12345" };
+    private readonly LoginModel model = new();
     private string? error;
+    private string? info;
     private bool busy;
+    private bool showPassword;
+
+    protected override void OnInitialized()
+    {
+        if (Session.Current is not null) NavigateAfterLogin();
+    }
+
+    private void TogglePassword() => showPassword = !showPassword;
+    private void ShowForgotPassword() { error = null; info = "Vui lòng liên hệ Admin để xác minh và được hỗ trợ thông tin đăng nhập."; }
+
     private async Task LoginAsync()
     {
-        busy = true; error = null;
+        busy = true;
+        error = null;
+        info = null;
         try
         {
             await Session.LoginAsync(model.UserName, model.Password);
-            Navigation.NavigateTo(Session.IsInRole("Customer") ? "/accounts" : Session.IsInRole("Teller") ? "/staff/deposit" : "/staff/users");
+            NavigateAfterLogin();
         }
-        catch (Exception ex) { error = ex.Message; }
+        catch (Exception exception) { error = exception.Message; }
         finally { busy = false; }
     }
-    private sealed class LoginModel { public string UserName { get; set; } = ""; public string Password { get; set; } = ""; }
+
+    private void NavigateAfterLogin() => Navigation.NavigateTo(
+        Session.IsInRole("Customer") ? "/accounts" :
+        Session.IsInRole("Teller") ? "/staff/deposit" : "/staff/users");
+
+    private sealed class LoginModel
+    {
+        public string UserName { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
 }
