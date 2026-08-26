@@ -1,0 +1,112 @@
+@page "/profile"
+@inject ApiSession Session
+
+<PageTitle>Thông tin khách hàng · SUBank</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Hồ sơ khách hàng</div>
+        <h1 class="mb-1">Thông tin khách hàng</h1>
+        <p>Thông tin định danh và liên hệ đang được SUBank lưu trong hồ sơ của bạn.</p>
+    </div>
+</div>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        @error
+        <button class="btn btn-sm btn-outline-danger ms-2" @onclick="LoadAsync">Thử lại</button>
+    </div>
+}
+else if (profile is null)
+{
+    <div class="loading-state">Đang tải thông tin khách hàng...</div>
+}
+else
+{
+    <article class="profile-card">
+        <header class="profile-identity">
+            <span class="profile-avatar" aria-hidden="true">@Initials</span>
+            <div>
+                <div class="eyebrow">Khách hàng cá nhân</div>
+                <h2>@profile.FullName</h2>
+                <p>Hồ sơ chỉ đọc · CCCD/CMND đã được che bớt để bảo vệ thông tin cá nhân.</p>
+            </div>
+        </header>
+
+        <dl class="profile-grid">
+            <div class="profile-field">
+                <dt>Họ và tên</dt>
+                <dd>@profile.FullName</dd>
+            </div>
+            <div class="profile-field">
+                <dt>Ngày sinh</dt>
+                <dd>@profile.DateOfBirth.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)</dd>
+            </div>
+            <div class="profile-field">
+                <dt>CCCD/CMND</dt>
+                <dd class="font-monospace">@profile.MaskedIdentityNumber</dd>
+            </div>
+            <div class="profile-field">
+                <dt>Số điện thoại</dt>
+                <dd>@profile.Phone</dd>
+            </div>
+            <div class="profile-field profile-field-wide">
+                <dt>Email</dt>
+                <dd>@profile.Email</dd>
+            </div>
+            <div class="profile-field profile-field-wide">
+                <dt>Địa chỉ thường trú</dt>
+                <dd>@profile.PermanentAddress</dd>
+            </div>
+            <div class="profile-field profile-field-wide">
+                <dt>Địa chỉ tạm trú</dt>
+                <dd>@(string.IsNullOrWhiteSpace(profile.TemporaryAddress) ? "Chưa cập nhật" : profile.TemporaryAddress)</dd>
+            </div>
+        </dl>
+
+        <footer class="profile-footer">
+            <div>
+                <small>Cập nhật hồ sơ gần nhất</small>
+                <strong>@LastUpdated</strong>
+            </div>
+            <a class="btn btn-primary" href="address-change">Yêu cầu đổi địa chỉ</a>
+        </footer>
+    </article>
+}
+
+@code {
+    private CustomerProfileDetail? profile;
+    private string? error;
+
+    private string Initials
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(profile?.FullName)) return "SU";
+            var parts = profile.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length == 1
+                ? parts[0][..1].ToUpperInvariant()
+                : $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+        }
+    }
+
+    private string LastUpdated => (profile?.UpdatedAtUtc ?? profile?.CreatedAtUtc)?.ToLocalTime()
+        .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) ?? "Chưa có dữ liệu";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            profile = await Session.GetProfileAsync();
+            error = profile is null ? "Không tìm thấy hồ sơ khách hàng." : null;
+        }
+        catch (Exception exception)
+        {
+            profile = null;
+            error = exception.Message;
+        }
+    }
+}

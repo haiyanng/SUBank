@@ -2,38 +2,119 @@
 @inject NavigationManager Navigation
 @implements IDisposable
 
-<nav class="navbar navbar-expand-md bg-primary" data-bs-theme="dark">
-    <div class="container">
-        <a class="navbar-brand fw-semibold" href="">SUBank</a>
-        <button class="navbar-toggler" type="button" title="Mở menu" aria-label="Mở menu" @onclick="ToggleNavMenu"><span class="navbar-toggler-icon"></span></button>
-        <div class="collapse navbar-collapse @NavMenuCssClass"><div class="navbar-nav ms-auto">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Trang chủ</NavLink>
+<div class="navigation-shell">
+    <header class="mobile-header">
+        <a class="mobile-brand" href="@HomeUrl" @onclick="CloseMenu">
+            <BrandWordmark />
+        </a>
+        <button class="menu-toggle" type="button" aria-label="Mở menu" aria-expanded="@(!collapseNavMenu)" @onclick="ToggleNavMenu">
+            <span></span><span></span><span></span>
+        </button>
+    </header>
+
+    @if (!collapseNavMenu)
+    {
+        <button class="menu-backdrop" type="button" aria-label="Đóng menu" @onclick="CloseMenu"></button>
+    }
+
+    <aside class="sidebar @SidebarCssClass">
+        <div class="sidebar-head">
+            <a class="sidebar-brand" href="@HomeUrl" @onclick="CloseMenu">
+                <BrandWordmark />
+            </a>
+            <button class="sidebar-close" type="button" aria-label="Đóng menu" @onclick="CloseMenu">×</button>
+        </div>
+
+        <p class="brand-tagline">Simple. Secure. Seamless.</p>
+        <div class="sidebar-divider"></div>
+
+        <nav class="sidebar-nav" aria-label="Điều hướng chính">
             @if (Session.IsInRole("Customer"))
             {
-                <NavLink class="nav-link" href="accounts">Tài khoản</NavLink>
-                <NavLink class="nav-link" href="transfer">Chuyển tiền</NavLink>
-                <NavLink class="nav-link" href="statements">Sao kê</NavLink>
-                <NavLink class="nav-link" href="qr">QR</NavLink>
-                <NavLink class="nav-link" href="address-change">Đổi địa chỉ</NavLink>
+                <span class="nav-section-label">Ngân hàng cá nhân</span>
+                <NavLink class="sidebar-link" href="accounts" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌂</span><span>Trang chủ</span></NavLink>
+                <NavLink class="sidebar-link" href="transfer" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⇄</span><span>Chuyển tiền</span></NavLink>
+                <NavLink class="sidebar-link" href="statements" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">▤</span><span>Sao kê</span></NavLink>
+                <NavLink class="sidebar-link" href="qr" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌗</span><span>QR</span></NavLink>
+                <NavLink class="sidebar-link" href="profile" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◎</span><span>Thông tin khách hàng</span></NavLink>
+                <NavLink class="sidebar-link" href="address-change" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌖</span><span>Đổi địa chỉ</span></NavLink>
             }
-            @if (Session.IsInRole("Teller")) { <NavLink class="nav-link" href="staff/deposit">Nộp tiền</NavLink> }
+
+            @if (Session.IsInRole("Teller"))
+            {
+                <span class="nav-section-label">Nghiệp vụ quầy</span>
+                <NavLink class="sidebar-link" href="staff/deposit" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">＋</span><span>Nộp tiền mặt</span></NavLink>
+            }
+
             @if (Session.IsInRole("Admin"))
             {
-                <NavLink class="nav-link" href="staff/users">Mở khóa</NavLink>
-                <NavLink class="nav-link" href="staff/audit">Audit</NavLink>
-                <NavLink class="nav-link" href="staff/address-changes">Duyệt địa chỉ</NavLink>
+                <span class="nav-section-label">Quản trị hệ thống</span>
+                <NavLink class="sidebar-link" href="staff/users" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">♙</span><span>Người dùng bị khóa</span></NavLink>
+                <NavLink class="sidebar-link" href="staff/audit" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">≡</span><span>Nhật ký kiểm toán</span></NavLink>
+                <NavLink class="sidebar-link" href="staff/address-changes" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">✓</span><span>Duyệt đổi địa chỉ</span></NavLink>
             }
-            @if (Session.Current is null) { <NavLink class="nav-link" href="login">Đăng nhập</NavLink> }
-            else { <button class="btn btn-link nav-link" @onclick="LogoutAsync">Đăng xuất (@Session.Current.User.UserName)</button> }
-        </div></div>
-    </div>
-</nav>
+        </nav>
+
+        <div class="sidebar-footer">
+            @if (Session.Current is null)
+            {
+                <a class="sidebar-login" href="login" @onclick="CloseMenu">Đăng nhập</a>
+            }
+            else
+            {
+                <div class="user-summary">
+                    <span class="user-avatar" aria-hidden="true">@UserInitial</span>
+                    <span class="user-copy"><small>@RoleDisplay</small><strong>@UserDisplayName</strong></span>
+                </div>
+                <button class="logout-button" type="button" @onclick="LogoutAsync">Đăng xuất <span aria-hidden="true">→</span></button>
+            }
+        </div>
+    </aside>
+</div>
 
 @code {
     private bool collapseNavMenu = true;
-    private string NavMenuCssClass => collapseNavMenu ? string.Empty : "show";
+    private string SidebarCssClass => collapseNavMenu ? string.Empty : "is-open";
+    private string HomeUrl => Session.IsInRole("Customer")
+        ? "accounts"
+        : Session.IsInRole("Teller")
+            ? "staff/deposit"
+            : Session.IsInRole("Admin")
+                ? "staff/users"
+                : "";
+    private string PrimaryRole => Session.Current?.User.Roles.FirstOrDefault() ?? "User";
+    private string UserInitial => Session.IsInRole("Customer")
+        ? "KH"
+        : string.IsNullOrWhiteSpace(Session.Current?.User.UserName)
+        ? "S"
+        : Session.Current.User.UserName[..1].ToUpperInvariant();
+    private string UserDisplayName => Session.IsInRole("Customer")
+        ? MaskPhone(Session.Current?.User.UserName)
+        : Session.Current?.User.UserName ?? "SUBank";
+    private string RoleDisplay => PrimaryRole switch
+    {
+        "Customer" => "Khách hàng",
+        "Teller" => "Giao dịch viên",
+        "Admin" => "Quản trị viên",
+        _ => PrimaryRole
+    };
+
     private void ToggleNavMenu() => collapseNavMenu = !collapseNavMenu;
-    protected override void OnInitialized() => Session.Changed += StateHasChanged;
-    private async Task LogoutAsync() { await Session.LogoutAsync(); Navigation.NavigateTo("/"); }
-    public void Dispose() => Session.Changed -= StateHasChanged;
+    private void CloseMenu() => collapseNavMenu = true;
+
+    private static string MaskPhone(string? value) => value is { Length: 10 }
+        ? $"{value[..3]}****{value[^3..]}"
+        : "Khách hàng SUBank";
+
+    protected override void OnInitialized() => Session.Changed += Refresh;
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LogoutAsync()
+    {
+        CloseMenu();
+        await Session.LogoutAsync();
+        Navigation.NavigateTo("/");
+    }
+
+    public void Dispose() => Session.Changed -= Refresh;
 }

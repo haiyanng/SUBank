@@ -1,25 +1,17 @@
 @page "/transactions/{AccountNumber}"
 @implements IDisposable
 @inject ApiSession Session
-<PageTitle>Lịch sử giao dịch</PageTitle>
-<h1>Lịch sử @AccountNumber</h1>
+<PageTitle>Lịch sử giao dịch · SUBank</PageTitle>
+<div class="page-heading"><div><div class="eyebrow">Lịch sử</div><h1 class="mb-1">Giao dịch tài khoản</h1><p>@AccountNumber</p></div><a class="btn btn-outline-secondary" href="accounts">Quay lại tài khoản</a></div>
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
-else if (items is null) { <p>Đang tải...</p> }
-else { <div class="table-responsive"><table class="table"><thead><tr><th>Mã</th><th>Loại</th><th>Số tiền</th><th>Thời gian</th></tr></thead><tbody>
-@foreach (var item in items) { <tr><td><a href="transaction/@item.ReferenceNo">@item.ReferenceNo</a></td><td>@item.Type</td><td>@item.Amount.ToString("N2")</td><td>@item.CreatedAtUtc.ToLocalTime()</td></tr> }
-</tbody></table></div> }
+else if (items is null) { <div class="loading-state">Đang tải giao dịch...</div> }
+else if (items.Count == 0) { <div class="empty-state"><h2 class="h5">Chưa có giao dịch</h2><p class="text-body-secondary mb-0">Tài khoản này chưa phát sinh giao dịch.</p></div> }
+else { <div class="card"><div class="card-body p-0 p-md-3"><div class="table-responsive"><table class="table mobile-stack-table mb-0"><thead><tr><th>Mã tham chiếu</th><th>Loại</th><th class="text-end">Số tiền</th><th>Thời gian</th></tr></thead><tbody>
+@foreach (var item in items) { <tr><td data-label="Mã"><a class="fw-semibold" href="transaction/@item.ReferenceNo">@item.ReferenceNo</a></td><td data-label="Loại"><span class="badge text-bg-light">@item.Type</span></td><td data-label="Số tiền" class="text-md-end money fw-semibold">@item.Amount.ToString("N2") VND</td><td data-label="Thời gian">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td></tr> }
+</tbody></table></div></div></div> }
 @code {
-    [Parameter] public string AccountNumber { get; set; } = "";
-    private List<TransactionSummary>? items; private string? error;
-    protected override void OnInitialized() => Session.BankingDataChanged += OnBankingDataChanged;
-    protected override Task OnParametersSetAsync() => LoadAsync();
-    private void OnBankingDataChanged() => _ = InvokeAsync(LoadAsync);
-    private async Task LoadAsync()
-    {
-        if (string.IsNullOrWhiteSpace(AccountNumber)) return;
-        try { items = await Session.GetTransactionsAsync(AccountNumber) ?? []; error = null; }
-        catch (Exception ex) { error = ex.Message; }
-        StateHasChanged();
-    }
+    [Parameter] public string AccountNumber { get; set; } = ""; private List<TransactionSummary>? items; private string? error;
+    protected override void OnInitialized() => Session.BankingDataChanged += OnBankingDataChanged; protected override Task OnParametersSetAsync() => LoadAsync(); private void OnBankingDataChanged() => _ = InvokeAsync(LoadAsync);
+    private async Task LoadAsync() { if (string.IsNullOrWhiteSpace(AccountNumber)) return; try { items = await Session.GetTransactionsAsync(AccountNumber) ?? []; error = null; } catch (Exception ex) { error = ex.Message; } StateHasChanged(); }
     public void Dispose() => Session.BankingDataChanged -= OnBankingDataChanged;
 }

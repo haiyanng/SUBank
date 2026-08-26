@@ -12,8 +12,9 @@ Tài liệu này mô tả control dự kiến. Một control chỉ được coi 
 - Không có customer self-registration.
 - Development seed tạo tối thiểu bốn user riêng: hai Customer, một Teller và một Admin.
 - Teller và Admin không dùng chung user và không được gán chéo role trong seed mặc định.
-- Login sử dụng `UserName`, không sử dụng Email làm login identifier.
+- Customer đăng nhập bằng `ApplicationUser.UserName` bắt buộc trùng chính xác `CustomerProfile.Phone` ở dạng 10 chữ số; Teller và Admin dùng username nghiệp vụ. Không sử dụng Email làm login identifier.
 - Email và Phone nghiệp vụ chỉ nằm trong `CustomerProfile`; không tạo bảng `CustomerContact` và không dùng Identity Email/Phone làm nguồn contact của Customer.
+- `CustomerProfile.Phone` là nguồn sự thật. Username Customer chỉ phản chiếu một chiều để Identity đăng nhập; mọi luồng đổi số điện thoại tương lai phải cập nhật cả hai giá trị nguyên tử và thu hồi phiên cũ.
 - Login password và transaction password là hai credential khác nhau, có hash riêng.
 - Không lưu hoặc log plaintext password, transaction password hoặc hash của chúng.
 

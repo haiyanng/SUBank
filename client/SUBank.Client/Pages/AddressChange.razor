@@ -2,7 +2,7 @@
 @inject ApiSession Session
 
 <PageTitle>Yêu cầu đổi địa chỉ</PageTitle>
-<h1>Yêu cầu đổi địa chỉ</h1>
+<div class="page-heading"><div><div class="eyebrow">Hồ sơ khách hàng</div><h1 class="mb-1">Yêu cầu đổi địa chỉ</h1><p>Thay đổi chỉ có hiệu lực sau khi Admin phê duyệt.</p></div></div>
 @if (message is not null) { <div class="alert alert-success">@message</div> }
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
 <div class="card shadow-sm mb-4"><div class="card-body">
@@ -13,10 +13,10 @@
     <button class="btn btn-primary" disabled="@busy" @onclick="SubmitAsync">Gửi yêu cầu</button>
 </div></div>
 <h2 class="h4">Lịch sử yêu cầu</h2>
-@if (items is null) { <p>Đang tải...</p> }
-else if (items.Count == 0) { <p class="text-body-secondary">Chưa có yêu cầu.</p> }
-else { <div class="table-responsive"><table class="table align-middle"><thead><tr><th>Mã</th><th>Địa chỉ thường trú</th><th>Trạng thái</th><th>Thời gian</th><th>Lý do</th></tr></thead><tbody>
-@foreach (var item in items) { <tr><td>@item.RequestNo</td><td>@item.PermanentAddress</td><td>@item.Status</td><td>@item.RequestedAtUtc.ToLocalTime()</td><td>@item.RejectionReason</td></tr> }
+@if (items is null) { <div class="loading-state">Đang tải yêu cầu...</div> }
+else if (items.Count == 0) { <div class="empty-state">Chưa có yêu cầu đổi địa chỉ.</div> }
+else { <div class="table-responsive"><table class="table mobile-stack-table align-middle"><thead><tr><th>Mã</th><th>Địa chỉ thường trú</th><th>Trạng thái</th><th>Thời gian</th><th>Lý do</th></tr></thead><tbody>
+@foreach (var item in items) { <tr><td data-label="Mã">@item.RequestNo</td><td data-label="Địa chỉ">@item.PermanentAddress</td><td data-label="Trạng thái">@item.Status</td><td data-label="Thời gian">@item.RequestedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td data-label="Lý do">@item.RejectionReason</td></tr> }
 </tbody></table></div> }
 @code {
     private string permanentAddress = ""; private string? temporaryAddress;

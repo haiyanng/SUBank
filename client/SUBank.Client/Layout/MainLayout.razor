@@ -1,14 +1,30 @@
 @inherits LayoutComponentBase
 
-<div class="d-flex flex-column min-vh-100">
+<div class="app-shell">
     <NavMenu />
-    <main class="flex-grow-1">
-        <article class="container py-4">
-            <RealtimeStatus />
-            @Body
-        </article>
-    </main>
-    <footer class="border-top py-3 text-center text-body-secondary">
-        <small>&copy; @DateTime.UtcNow.Year SUBank</small>
-    </footer>
+
+    <div class="app-workspace">
+        <header class="workspace-header">
+            <div>
+                <span class="workspace-kicker">SUBank Digital Banking</span>
+                <span class="workspace-title">Không gian giao dịch an toàn</span>
+            </div>
+            <div class="secure-session" title="Phiên làm việc đang hoạt động">
+                <span aria-hidden="true"></span>
+                Kết nối an toàn
+            </div>
+        </header>
+
+        <main class="app-main">
+            <article class="content-container">
+                <RealtimeStatus />
+                @Body
+            </article>
+        </main>
+
+        <footer class="app-footer">
+            <span>© @DateTime.UtcNow.Year SUBank · Sản phẩm mô phỏng phục vụ học tập</span>
+            <span>Không kết nối hệ thống ngân hàng thật</span>
+        </footer>
+    </div>
 </div>

@@ -1,14 +1,14 @@
 @page "/staff/users"
 @inject ApiSession Session
-<PageTitle>Người dùng bị khóa</PageTitle>
-<h1>Admin - Người dùng bị khóa</h1>
+<PageTitle>Người dùng bị khóa · SUBank</PageTitle>
+<div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Người dùng bị khóa</h1><p>Mở khóa sau khi đã xác minh yêu cầu hỗ trợ.</p></div></div>
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
-else if (users is null) { <p>Đang tải...</p> }
-else if (users.Count == 0) { <div class="alert alert-info">Hiện không có người dùng bị khóa.</div> }
-else { <table class="table"><thead><tr><th>Tên</th><th>Số lần sai</th><th></th></tr></thead><tbody>@foreach (var user in users) { <tr><td>@user.UserName</td><td>@user.FailedAttempts</td><td><button class="btn btn-sm btn-warning" @onclick="() => UnlockAsync(user.UserName)">Mở khóa</button></td></tr> }</tbody></table> }
+else if (users is null) { <div class="loading-state">Đang tải người dùng...</div> }
+else if (users.Count == 0) { <div class="empty-state"><h2 class="h5">Mọi tài khoản đang hoạt động</h2><p class="text-body-secondary mb-0">Hiện không có người dùng bị khóa.</p></div> }
+else { <div class="card"><div class="card-body"><div class="table-responsive"><table class="table mobile-stack-table mb-0"><thead><tr><th>Tên</th><th>Số lần sai</th><th></th></tr></thead><tbody>@foreach (var user in users) { <tr><td data-label="Tên">@user.UserName</td><td data-label="Số lần sai">@user.FailedAttempts</td><td><button class="btn btn-sm btn-outline-primary" disabled="@busy" @onclick="() => UnlockAsync(user.UserName)">Mở khóa</button></td></tr> }</tbody></table></div></div></div> }
 @code {
-    private List<LockedUserSummary>? users; private string? error;
+    private List<LockedUserSummary>? users; private string? error; private bool busy;
     protected override Task OnInitializedAsync() => LoadAsync();
     private async Task LoadAsync() { try { users = await Session.GetLockedUsersAsync() ?? []; } catch (Exception ex) { error = ex.Message; } }
-    private async Task UnlockAsync(string name) { try { await Session.UnlockAsync(name); await LoadAsync(); } catch (Exception ex) { error = ex.Message; } }
+    private async Task UnlockAsync(string name) { busy = true; error = null; try { await Session.UnlockAsync(name); await LoadAsync(); } catch (Exception ex) { error = ex.Message; } finally { busy = false; } }
 }

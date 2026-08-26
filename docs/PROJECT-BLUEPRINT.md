@@ -42,8 +42,8 @@ Seed phải tạo bốn user riêng biệt bằng ASP.NET Core Identity:
 
 | User | Role | Mục đích demo |
 |---|---|---|
-| `customer.a` | Customer | Chuyển tiền, xem account/history, tạo QR |
-| `customer.b` | Customer | Nhận tiền, quét QR và kiểm chứng realtime |
+| `0900000001` | Customer | Chuyển tiền, xem account/history, tạo QR |
+| `0900000002` | Customer | Nhận tiền, quét QR và kiểm chứng realtime |
 | `teller` | Teller | Thực hiện Cash Deposit |
 | `admin` | Admin | Mở khóa user, xử lý Address Request và xem Audit Log |
 
@@ -177,7 +177,7 @@ Không tạo entity hoặc bảng `CustomerContact`. `CustomerProfile` là ngu�
 - `PermanentAddress`
 - `TemporaryAddress`
 
-`ApplicationUser` chỉ phục vụ login/security/role và liên kết 1-0..1 với `CustomerProfile`. V2.4 đăng nhập bằng `UserName`, không dùng Email làm login identifier. Các cột Email/Phone có sẵn trong schema Identity không được dùng làm nguồn contact nghiệp vụ và không được đồng bộ hai chiều với `CustomerProfile`.
+`ApplicationUser` chỉ phục vụ login/security/role và liên kết 1-0..1 với `CustomerProfile`. Customer bắt buộc có `ApplicationUser.UserName` bằng đúng `CustomerProfile.Phone`; Teller và Admin dùng username nghiệp vụ. `CustomerProfile.Phone` vẫn là nguồn sự thật, còn username Customer là bản sao một chiều phục vụ Identity login. Không dùng Email làm login identifier và không dùng các cột Email/Phone có sẵn trong schema Identity làm nguồn contact nghiệp vụ. Nếu bổ sung luồng đổi số điện thoại, profile và username phải được cập nhật nguyên tử để không khóa nhầm quyền đăng nhập.
 
 Teller và Admin không cần `CustomerProfile` vì họ không phải Customer. Endpoint `/api/profile` xác định Customer từ authentication context và không nhận CustomerId từ Client.
 

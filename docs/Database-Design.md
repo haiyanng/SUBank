@@ -21,7 +21,7 @@
 | `IsActive` | `bit` | required, default true |
 | `CreatedAtUtc` | `datetimeoffset` | required |
 
-Identity quản lý `UserName`, password hash, failure count, lockout và role. Login bằng `UserName`.
+Identity quản lý `UserName`, password hash, failure count, lockout và role. Customer có `UserName` bằng đúng `CustomerProfile.Phone`; Teller/Admin dùng username nghiệp vụ. Không ghi số liên hệ vào `AspNetUsers.PhoneNumber`.
 
 ### CustomerProfile
 
@@ -159,10 +159,16 @@ Mỗi Customer chỉ có một request Pending. Approve request và cập nhật
 
 ## Seed P0
 
-- `customer.a`, role Customer, account `1000000001`, balance `100000000.00`.
-- `customer.b`, role Customer, account `1000000002`, balance `50000000.00`.
+- `0900000001`, role Customer:
+  - account `1000000001`, balance mở đầu `100000000.00`;
+  - account `1000000003`, balance mở đầu `20000000.00`.
+- `0900000002`, role Customer:
+  - account `1000000002`, balance mở đầu `50000000.00`;
+  - account `1000000004`, balance mở đầu `10000000.00`.
 - `teller`, role Teller.
 - `admin`, role Admin.
+- Database Development cũ được đổi username `customer.a`/`customer.b` tại chỗ, giữ nguyên `UserId` và toàn bộ foreign key liên quan.
+- Seed bổ sung từng profile/account còn thiếu và không đặt lại balance của account đã tồn tại.
 - Dữ liệu đều tổng hợp; password/transaction password chỉ dành cho Development và không tái sử dụng secret thật.
 
 ## Quy tắc 3NF

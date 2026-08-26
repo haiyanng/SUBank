@@ -3,7 +3,7 @@
 @inject IJSRuntime JS
 
 <PageTitle>Sao kê tài khoản</PageTitle>
-<h1>Sao kê tài khoản</h1>
+<div class="page-heading"><div><div class="eyebrow">Báo cáo tài chính</div><h1 class="mb-1">Sao kê tài khoản</h1><p>Lọc theo tháng hoặc cả năm và tải bản PDF.</p></div></div>
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
 <div class="row g-3 align-items-end mb-4">
     <div class="col-12 col-md-4"><label class="form-label" for="account">Số tài khoản</label><input id="account" class="form-control" maxlength="10" @bind="accountNumber" /></div>
@@ -17,14 +17,17 @@
         <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi có<br /><strong class="text-success">@statement.TotalCredit.ToString("N2")</strong></div></div></div>
         <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi nợ<br /><strong class="text-danger">@statement.TotalDebit.ToString("N2")</strong></div></div></div>
         <div class="col-md-3"><div class="card"><div class="card-body">Số dư cuối kỳ<br /><strong>@statement.ClosingBalance.ToString("N2")</strong></div></div></div></div>
-    <div class="table-responsive"><table class="table"><thead><tr><th>Thời gian</th><th>Mã</th><th>Chiều</th><th class="text-end">Số tiền</th></tr></thead><tbody>
-    @foreach (var item in statement.Transactions) { <tr><td>@item.CreatedAtUtc.ToLocalTime()</td><td>@item.ReferenceNo</td><td>@item.Direction</td><td class="text-end">@item.Amount.ToString("N2")</td></tr> }
+    @if (statement.Transactions.Count == 0) { <div class="empty-state">Không có giao dịch trong kỳ đã chọn.</div> }
+    else { <div class="card"><div class="card-body p-0 p-md-3"><div class="table-responsive"><table class="table mobile-stack-table mb-0"><thead><tr><th>Thời gian</th><th>Mã</th><th>Chiều</th><th class="text-end">Số tiền</th></tr></thead><tbody>
+    @foreach (var item in statement.Transactions) { <tr><td data-label="Thời gian">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td data-label="Mã">@item.ReferenceNo</td><td data-label="Chiều">@item.Direction</td><td data-label="Số tiền" class="text-md-end money">@item.Amount.ToString("N2") VND</td></tr> }
     </tbody></table></div>
+    </div></div> }
 }
 @code {
+    [SupplyParameterFromQuery(Name = "account")] public string? Account { get; set; }
     private string accountNumber = ""; private int year = DateTime.UtcNow.Year; private int? month = DateTime.UtcNow.Month;
     private AccountStatement? statement; private string? error; private bool busy;
-    protected override async Task OnInitializedAsync() { var accounts = await Session.GetAccountsAsync(); accountNumber = accounts?.FirstOrDefault()?.AccountNumber ?? ""; }
+    protected override async Task OnInitializedAsync() { var accounts = await Session.GetAccountsAsync(); accountNumber = accounts?.FirstOrDefault(x => x.AccountNumber == Account)?.AccountNumber ?? accounts?.FirstOrDefault()?.AccountNumber ?? ""; }
     private async Task LoadAsync() { busy = true; error = null; try { statement = await Session.GetStatementAsync(accountNumber, year, month); } catch (Exception exception) { error = exception.Message; } finally { busy = false; } }
     private async Task DownloadPdfAsync() { busy = true; error = null; try { var bytes = await Session.GetStatementPdfAsync(accountNumber, year, month); var period = month is null ? year.ToString() : $"{year}-{month:00}"; await JS.InvokeVoidAsync("subankDownloadBase64", $"SUBank-{accountNumber}-{period}.pdf", "application/pdf", Convert.ToBase64String(bytes)); } catch (Exception exception) { error = exception.Message; } finally { busy = false; } }
 }
