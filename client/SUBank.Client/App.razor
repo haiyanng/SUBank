@@ -1,4 +1,6 @@
+@implements IDisposable
 @inject ApiSession Session
+@inject RealtimeService Realtime
 
 <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
@@ -8,5 +10,13 @@
 </Router>
 
 @code {
-    protected override Task OnInitializedAsync() => Session.TryRestoreAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        await Session.TryRestoreAsync();
+        await Realtime.SyncAsync();
+    }
+
+    private void OnSessionChanged() => _ = InvokeAsync(Realtime.SyncAsync);
+    public void Dispose() => Session.Changed -= OnSessionChanged;
 }

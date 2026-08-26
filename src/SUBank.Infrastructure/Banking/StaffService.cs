@@ -15,7 +15,8 @@ namespace SUBank.Infrastructure.Banking;
 public sealed class StaffService(
     SUBankDbContext dbContext,
     UserManager<ApplicationUser> userManager,
-    IOptions<IdentityOptions> identityOptions) : IStaffService
+    IOptions<IdentityOptions> identityOptions,
+    IRealtimeNotifier realtimeNotifier) : IStaffService
 {
     public async Task<CashDepositResponse> CashDepositAsync(string tellerUserId, string idempotencyKey, CashDepositRequest request, CancellationToken cancellationToken)
     {
@@ -32,7 +33,8 @@ public sealed class StaffService(
         }
 
         await using var sqlTransaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
-        var account = await dbContext.BankAccounts.SingleOrDefaultAsync(x => x.AccountNumber == request.DestinationAccountNumber, cancellationToken)
+        var account = await dbContext.BankAccounts.Include(x => x.CustomerProfile)
+            .SingleOrDefaultAsync(x => x.AccountNumber == request.DestinationAccountNumber, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy tài khoản nhận.");
         if (account.Status != AccountStatus.Active) throw new BusinessRuleException("Tài khoản nhận không hoạt động.");
         account.Balance += request.Amount;
@@ -55,6 +57,9 @@ public sealed class StaffService(
             await sqlTransaction.RollbackAsync(cancellationToken);
             throw new ConflictException("Yêu cầu bị trùng hoặc dữ liệu vừa thay đổi.");
         }
+        await realtimeNotifier.BalanceChangedAsync(account.CustomerProfile.UserId, account.AccountNumber, CancellationToken.None);
+        await realtimeNotifier.TransactionReceivedAsync(
+            account.CustomerProfile.UserId, item.ReferenceNo, account.AccountNumber, CancellationToken.None);
         return new CashDepositResponse(item.ReferenceNo, item.Amount, account.AccountNumber, now, false);
     }
 

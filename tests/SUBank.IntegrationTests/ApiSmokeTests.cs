@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SUBank.Contracts.Auth;
@@ -57,11 +59,39 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     [Fact]
     public async Task Auth_SecondLoginInvalidatesFirstAccessToken()
     {
+        var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
         using var first = await CreateAuthorizedClientAsync("customer.a");
+        notifier.Clear();
         using var second = await CreateAuthorizedClientAsync("customer.a");
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await first.GetAsync("/api/auth/me")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await second.GetAsync("/api/auth/me")).StatusCode);
+        Assert.Single(notifier.ForcedSessions);
+    }
+
+    [Fact]
+    public async Task Realtime_SecondLoginSendsForceLogoutToOldSession()
+    {
+        using var firstClient = factory.CreateClient();
+        var firstSession = await LoginAsync(firstClient, "customer.a");
+        firstClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", firstSession.AccessToken);
+        var forced = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var hub = new HubConnectionBuilder()
+            .WithUrl(new Uri(factory.Server.BaseAddress, "/hubs/banking"), options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(firstSession.AccessToken);
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
+            })
+            .Build();
+        hub.On("ForceLogout", () => forced.TrySetResult());
+        await hub.StartAsync();
+
+        using var secondClient = factory.CreateClient();
+        await LoginAsync(secondClient, "customer.a");
+
+        await forced.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await firstClient.GetAsync("/api/auth/me")).StatusCode);
     }
 
     [Fact]
@@ -110,6 +140,8 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         var before = await GetBalancesAsync();
         try
         {
+            var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
+            notifier.Clear();
             using var customer = await CreateAuthorizedClientAsync("customer.a");
             var request = new TransferRequest(AccountA, AccountB, 12_345.67m, "Integration transfer", "123456");
             using var first = await PostWithIdempotencyAsync(customer, "/api/transfers", key, request);
@@ -125,6 +157,9 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
             Assert.Equal(before[AccountA] - request.Amount, after[AccountA]);
             Assert.Equal(before[AccountB] + request.Amount, after[AccountB]);
             await AssertTransactionAndAuditAsync(key, "TRANSFER");
+            Assert.Equal(2, notifier.BalanceChanges.Count);
+            Assert.Equal(2, notifier.Transactions.Count);
+            Assert.All(notifier.Transactions, x => Assert.Equal(firstBody.ReferenceNo, x.ReferenceNo));
 
             using var conflict = await PostWithIdempotencyAsync(customer, "/api/transfers", key, request with { Amount = request.Amount + 1m });
             Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
@@ -183,6 +218,8 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         var before = await GetBalancesAsync();
         try
         {
+            var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
+            notifier.Clear();
             using var teller = await CreateAuthorizedClientAsync("teller");
             var request = new CashDepositRequest(AccountA, 54_321.25m, "Integration deposit");
             using var first = await PostWithIdempotencyAsync(teller, "/api/teller/cash-deposits", key, request);
@@ -195,6 +232,8 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
             Assert.Equal(before[AccountA] + request.Amount, after[AccountA]);
             Assert.Equal(before[AccountB], after[AccountB]);
             await AssertTransactionAndAuditAsync(key, "CASH_DEPOSIT");
+            Assert.Single(notifier.BalanceChanges);
+            Assert.Single(notifier.Transactions);
         }
         finally { await CleanupTransactionsAsync(key, before); }
     }
