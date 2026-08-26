@@ -1,0 +1,6 @@
+@SUBank.Api_HostAddress = http://localhost:5247
+
+GET {{SUBank.Api_HostAddress}}/health
+Accept: application/json
+
+###
