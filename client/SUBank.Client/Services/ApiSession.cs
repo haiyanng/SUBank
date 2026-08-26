@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using SUBank.Contracts.Accounts;
+using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Transactions;
@@ -79,6 +80,34 @@ public sealed class ApiSession(HttpClient httpClient)
 
     public Task<List<LockedUserSummary>?> GetLockedUsersAsync() => GetAsync<List<LockedUserSummary>>("api/admin/locked-users");
     public Task<List<AuditLogSummary>?> GetAuditLogsAsync() => GetAsync<List<AuditLogSummary>>("api/admin/audit-logs");
+    public Task<List<AddressChangeRequestSummary>?> GetAddressChangesAsync() =>
+        GetAsync<List<AddressChangeRequestSummary>>("api/address-change-requests");
+    public Task<List<AddressChangeRequestSummary>?> GetPendingAddressChangesAsync() =>
+        GetAsync<List<AddressChangeRequestSummary>>("api/admin/address-change-requests/pending");
+
+    public async Task CreateAddressChangeAsync(CreateAddressChangeRequest model)
+    {
+        using var request = Authorized(HttpMethod.Post, "api/address-change-requests", JsonContent.Create(model));
+        using var response = await httpClient.SendAsync(request);
+        await EnsureSuccessAsync(response);
+    }
+
+    public async Task ApproveAddressChangeAsync(string requestNo)
+    {
+        using var request = Authorized(HttpMethod.Post,
+            $"api/admin/address-change-requests/{Uri.EscapeDataString(requestNo)}/approve");
+        using var response = await httpClient.SendAsync(request);
+        await EnsureSuccessAsync(response);
+    }
+
+    public async Task RejectAddressChangeAsync(string requestNo, string reason)
+    {
+        using var request = Authorized(HttpMethod.Post,
+            $"api/admin/address-change-requests/{Uri.EscapeDataString(requestNo)}/reject",
+            JsonContent.Create(new RejectAddressChangeRequest(reason)));
+        using var response = await httpClient.SendAsync(request);
+        await EnsureSuccessAsync(response);
+    }
 
     public async Task UnlockAsync(string userName)
     {

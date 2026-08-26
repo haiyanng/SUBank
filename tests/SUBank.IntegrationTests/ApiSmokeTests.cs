@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SUBank.Contracts.Auth;
+using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Transfers;
 using SUBank.Domain.Entities;
@@ -246,6 +247,65 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         Assert.True(db.Model.FindEntityType(typeof(BankAccount))!.FindProperty(nameof(BankAccount.RowVersion))!.IsConcurrencyToken);
     }
 
+    [Fact]
+    public async Task AddressChange_CustomerCreatesAndAdminApprovesOrRejects()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var approvedAddress = $"Integration approved {suffix}";
+        var rejectedAddress = $"Integration rejected {suffix}";
+        var original = await GetCustomerAddressesAsync("customer.a");
+        var requestNumbers = new List<string>();
+        try
+        {
+            using var customer = await CreateAuthorizedClientAsync("customer.a");
+            Assert.Equal(HttpStatusCode.UnprocessableEntity,
+                (await customer.PostAsJsonAsync("/api/address-change-requests", new CreateAddressChangeRequest(" ", null))).StatusCode);
+            var createdResponse = await customer.PostAsJsonAsync("/api/address-change-requests",
+                new CreateAddressChangeRequest(approvedAddress, "Temporary integration"));
+            Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
+            var created = (await createdResponse.Content.ReadFromJsonAsync<AddressChangeRequestSummary>())!;
+            requestNumbers.Add(created.RequestNo);
+            Assert.Equal(HttpStatusCode.Conflict,
+                (await customer.PostAsJsonAsync("/api/address-change-requests",
+                    new CreateAddressChangeRequest("Another address", null))).StatusCode);
+
+            using var teller = await CreateAuthorizedClientAsync("teller");
+            Assert.Equal(HttpStatusCode.Forbidden,
+                (await teller.GetAsync("/api/admin/address-change-requests/pending")).StatusCode);
+            using var admin = await CreateAuthorizedClientAsync("admin");
+            var pending = await admin.GetFromJsonAsync<List<AddressChangeRequestSummary>>(
+                "/api/admin/address-change-requests/pending");
+            Assert.Contains(pending!, x => x.RequestNo == created.RequestNo);
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await admin.PostAsync($"/api/admin/address-change-requests/{created.RequestNo}/approve", null)).StatusCode);
+            Assert.Equal((approvedAddress, "Temporary integration"), await GetCustomerAddressesAsync("customer.a"));
+            Assert.Equal(HttpStatusCode.Conflict,
+                (await admin.PostAsync($"/api/admin/address-change-requests/{created.RequestNo}/approve", null)).StatusCode);
+
+            customer.DefaultRequestHeaders.Authorization = null;
+            var customerSession = await LoginAsync(customer, "customer.a");
+            customer.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerSession.AccessToken);
+            var rejectedResponse = await customer.PostAsJsonAsync("/api/address-change-requests",
+                new CreateAddressChangeRequest(rejectedAddress, null));
+            rejectedResponse.EnsureSuccessStatusCode();
+            var rejected = (await rejectedResponse.Content.ReadFromJsonAsync<AddressChangeRequestSummary>())!;
+            requestNumbers.Add(rejected.RequestNo);
+            admin.DefaultRequestHeaders.Authorization = null;
+            var adminSession = await LoginAsync(admin, "admin");
+            admin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminSession.AccessToken);
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await admin.PostAsJsonAsync($"/api/admin/address-change-requests/{rejected.RequestNo}/reject",
+                    new RejectAddressChangeRequest("Thiếu giấy tờ xác minh"))).StatusCode);
+            Assert.Equal((approvedAddress, "Temporary integration"), await GetCustomerAddressesAsync("customer.a"));
+            var history = await customer.GetFromJsonAsync<List<AddressChangeRequestSummary>>("/api/address-change-requests");
+            Assert.Contains(history!, x => x.RequestNo == rejected.RequestNo && x.Status == "Rejected");
+        }
+        finally
+        {
+            await CleanupAddressChangesAsync(requestNumbers, original);
+        }
+    }
+
     private async Task<HttpClient> CreateAuthorizedClientAsync(string userName)
     {
         var client = factory.CreateClient();
@@ -281,6 +341,31 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         var db = scope.ServiceProvider.GetRequiredService<SUBankDbContext>();
         return await db.BankAccounts.AsNoTracking().Where(x => x.AccountNumber == AccountA || x.AccountNumber == AccountB)
             .ToDictionaryAsync(x => x.AccountNumber, x => x.Balance);
+    }
+
+    private async Task<(string Permanent, string? Temporary)> GetCustomerAddressesAsync(string userName)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SUBankDbContext>();
+        var profile = await db.CustomerProfiles.AsNoTracking().SingleAsync(x => x.UserId == db.Users
+            .Where(u => u.UserName == userName).Select(u => u.Id).Single());
+        return (profile.PermanentAddress, profile.TemporaryAddress);
+    }
+
+    private async Task CleanupAddressChangesAsync(
+        IReadOnlyCollection<string> requestNumbers, (string Permanent, string? Temporary) original)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SUBankDbContext>();
+        if (requestNumbers.Count > 0)
+        {
+            await db.AuditLogs.Where(x => x.EntityId != null && requestNumbers.Contains(x.EntityId)).ExecuteDeleteAsync();
+            await db.AddressChangeRequests.Where(x => requestNumbers.Contains(x.RequestNo)).ExecuteDeleteAsync();
+        }
+        var userId = await db.Users.Where(x => x.UserName == "customer.a").Select(x => x.Id).SingleAsync();
+        await db.CustomerProfiles.Where(x => x.UserId == userId).ExecuteUpdateAsync(setters => setters
+            .SetProperty(x => x.PermanentAddress, original.Permanent)
+            .SetProperty(x => x.TemporaryAddress, original.Temporary));
     }
 
     private async Task<bool> TransactionExistsAsync(string key)

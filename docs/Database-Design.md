@@ -121,6 +121,22 @@ Unique index: `(CreatedByUserId, IdempotencyKey)`. Check theo loại:
 
 SQL chỉ lưu lịch sử. Redis key theo user mới là nguồn quyết định `sid` đang active; không lưu raw access/refresh token trong bảng này.
 
+### AddressChangeRequest
+
+| Cột | Kiểu | Quy tắc |
+|---|---|---|
+| `Id` | `bigint` | PK, identity; không expose |
+| `RequestNo` | `varchar(30)` | business identifier unique |
+| `CustomerProfileId` | `bigint` | required FK |
+| `PermanentAddress` | `nvarchar(500)` | required |
+| `TemporaryAddress` | `nvarchar(500)` | nullable |
+| `Status` | `varchar(20)` | Pending/Approved/Rejected |
+| `RequestedAtUtc`, `DecidedAtUtc` | `datetimeoffset` | thời gian UTC |
+| `DecidedByUserId` | `nvarchar(450)` | nullable FK Admin |
+| `RejectionReason` | `nvarchar(280)` | bắt buộc khi reject |
+
+Mỗi Customer chỉ có một request Pending. Approve request và cập nhật `CustomerProfile` phải nằm trong cùng SQL transaction.
+
 ## Index tối thiểu
 
 - Identity normalized username.
@@ -133,6 +149,7 @@ SQL chỉ lưu lịch sử. Redis key theo user mới là nguồn quyết địn
 - `AuditLog.CreatedAtUtc`; `AuditLog.UserId, CreatedAtUtc`.
 - `RefreshToken.TokenHash` unique; `RefreshToken.UserId, SessionId`.
 - `UserSession.UserId, SessionId` unique; `UserSession.UserId, RevokedAtUtc`.
+- `AddressChangeRequest.RequestNo` unique; `AddressChangeRequest.CustomerProfileId, Status`.
 
 ## Format business identifier
 

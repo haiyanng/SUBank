@@ -158,6 +158,19 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: realtime event phải phát sau commit và không được biến thành dependency của core banking. `ForceLogout` cho UX nhanh, nhưng request authorization vẫn phải do Redis active-session middleware quyết định.
 
+## Entry 013 - P1 quy trình đổi địa chỉ
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: Customer tạo yêu cầu đổi địa chỉ; Admin duyệt hoặc từ chối.
+- Tóm tắt prompt/công việc thực tế: AI đã commit/push/merge realtime feature theo ủy quyền, sau đó tạo `feature/address-change-workflow` từ `develop`. Vertical slice bổ sung entity/migration, validation, service transaction, Customer/Admin API, Bootstrap UI, RBAC/audit và integration test.
+- File/module bị tác động: Domain/Contracts/Application address change; Infrastructure service/EF migration; hai API controller; Blazor Customer/Admin page và navigation; integration test; README, database design và báo cáo này.
+- Kiểm chứng đã thực hiện: build 0 warning/0 error; 24/24 test pass. Test bao phủ input rỗng, duplicate pending, Teller bị `403`, Admin approve/re-approve conflict, reject có lý do, profile chỉ thay đổi khi approve và cleanup dữ liệu.
+- Kết quả: `CustomerProfile` vẫn là nguồn địa chỉ có thẩm quyền; request lưu lịch sử và business identifier `RequestNo`. Approve và profile update dùng cùng SQL transaction.
+- Vấn đề còn lại: chưa có upload giấy tờ xác minh vì không thuộc phạm vi V2.4; UI là quy trình demo tối thiểu.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: request workflow phải tách dữ liệu đề nghị khỏi profile authoritative; nếu update profile trước khi Admin duyệt thì approval chỉ còn là hình thức.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:
