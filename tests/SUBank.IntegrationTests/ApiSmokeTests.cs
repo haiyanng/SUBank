@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Staff;
+using SUBank.Contracts.Statements;
 using SUBank.Contracts.Transfers;
 using SUBank.Domain.Entities;
 using SUBank.Infrastructure.Identity;
@@ -304,6 +305,40 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         {
             await CleanupAddressChangesAsync(requestNumbers, original);
         }
+    }
+
+    [Fact]
+    public async Task Statement_ReturnsAuthorizedReadModelAndPdf()
+    {
+        var key = $"test-statement-{Guid.NewGuid():N}";
+        var before = await GetBalancesAsync();
+        try
+        {
+            using var customer = await CreateAuthorizedClientAsync("customer.a");
+            using var transfer = await PostWithIdempotencyAsync(customer, "/api/transfers", key,
+                new TransferRequest(AccountA, AccountB, 1_234.56m, "Statement test", "123456"));
+            transfer.EnsureSuccessStatusCode();
+            var created = (await transfer.Content.ReadFromJsonAsync<TransferResponse>())!;
+            var now = DateTime.UtcNow;
+            var statement = await customer.GetFromJsonAsync<AccountStatement>(
+                $"/api/accounts/{AccountA}/statements?year={now.Year}&month={now.Month}");
+            Assert.Contains(statement!.Transactions, x => x.ReferenceNo == created.ReferenceNo && x.Direction == "Debit");
+            Assert.True(statement.TotalDebit >= 1_234.56m);
+            Assert.Equal(statement.OpeningBalance + statement.TotalCredit - statement.TotalDebit, statement.ClosingBalance);
+
+            using var pdf = await customer.GetAsync(
+                $"/api/accounts/{AccountA}/statements/pdf?year={now.Year}&month={now.Month}");
+            Assert.Equal(HttpStatusCode.OK, pdf.StatusCode);
+            Assert.Equal("application/pdf", pdf.Content.Headers.ContentType?.MediaType);
+            var bytes = await pdf.Content.ReadAsByteArrayAsync();
+            Assert.True(bytes.Length > 500);
+            Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+            Assert.Equal(HttpStatusCode.NotFound,
+                (await customer.GetAsync($"/api/accounts/{AccountB}/statements?year={now.Year}&month={now.Month}")).StatusCode);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity,
+                (await customer.GetAsync($"/api/accounts/{AccountA}/statements?year={now.Year}&month=13")).StatusCode);
+        }
+        finally { await CleanupTransactionsAsync(key, before); }
     }
 
     private async Task<HttpClient> CreateAuthorizedClientAsync(string userName)

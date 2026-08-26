@@ -5,6 +5,7 @@ using SUBank.Contracts.Accounts;
 using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.Staff;
+using SUBank.Contracts.Statements;
 using SUBank.Contracts.Transactions;
 using SUBank.Contracts.Transfers;
 
@@ -59,6 +60,17 @@ public sealed class ApiSession(HttpClient httpClient)
     public Task<List<AccountSummary>?> GetAccountsAsync() => GetAsync<List<AccountSummary>>("api/accounts");
     public Task<List<TransactionSummary>?> GetTransactionsAsync(string account) => GetAsync<List<TransactionSummary>>($"api/accounts/{account}/transactions");
     public Task<TransactionDetail?> GetTransactionAsync(string referenceNo) => GetAsync<TransactionDetail>($"api/transactions/{referenceNo}");
+    public Task<AccountStatement?> GetStatementAsync(string accountNumber, int year, int? month) =>
+        GetAsync<AccountStatement>($"api/accounts/{Uri.EscapeDataString(accountNumber)}/statements?year={year}&month={month}");
+
+    public async Task<byte[]> GetStatementPdfAsync(string accountNumber, int year, int? month)
+    {
+        using var request = Authorized(HttpMethod.Get,
+            $"api/accounts/{Uri.EscapeDataString(accountNumber)}/statements/pdf?year={year}&month={month}");
+        using var response = await httpClient.SendAsync(request);
+        await EnsureSuccessAsync(response);
+        return await response.Content.ReadAsByteArrayAsync();
+    }
 
     public async Task<TransferResponse?> TransferAsync(TransferRequest model)
     {

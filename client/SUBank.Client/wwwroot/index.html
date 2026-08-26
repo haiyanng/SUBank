@@ -26,5 +26,13 @@
         <span class="dismiss">&#10006;</span>
     </div>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
+    <script>
+        window.subankDownloadBase64 = (fileName, contentType, base64) => {
+            const link = document.createElement('a');
+            link.download = fileName;
+            link.href = `data:${contentType};base64,${base64}`;
+            link.click();
+        };
+    </script>
 </body>
 </html>
