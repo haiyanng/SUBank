@@ -184,6 +184,19 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: file download cũng phải qua ownership authorization; không thể dùng anchor URL trực tiếp khi access token chỉ nằm trong memory, nên Client phải gọi API có Bearer token rồi tạo download.
 
+## Entry 015 - P1 SUBank QR nội bộ
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: tạo và đọc SUBank QR nội bộ để điền trước giao dịch chuyển tiền.
+- Tóm tắt prompt/công việc thực tế: AI merge feature sao kê vào `develop`, tạo `feature/internal-qr-transfer`, rồi triển khai payload có version, tạo PNG, decode ảnh upload/camera phía server và điều hướng sang form transfer hiện hữu.
+- File/module bị tác động: Contracts QR; Application service contract và payload rules; Infrastructure QRCoder/ZXing ImageSharp service; API controller/rate limit; Blazor QR page, camera JavaScript, transfer query prefill và navigation; unit/integration test; README và báo cáo này.
+- Kiểm chứng đã thực hiện: restore; build toàn solution 0 warning/0 error; 32/32 test pass. Integration test tạo QR PNG thật bằng API rồi upload chính ảnh đó để decode; kiểm tra ownership khi tạo QR. Unit test bao phủ payload hợp lệ, foreign scheme, sai version/account/amount và duplicate query key.
+- Kết quả: QR chỉ chứa account, amount/message tùy chọn và không chuyển tiền trực tiếp. Dữ liệu decode luôn quay lại form transfer để user review và đi qua toàn bộ validation, transaction password, idempotency, ownership và SQL transaction hiện hữu.
+- Vấn đề còn lại: camera cần HTTPS và quyền trình duyệt; chưa browser-test trên thiết bị di động thật. Đây là QR riêng của đồ án, không tương thích và không được tuyên bố kết nối VietQR/NAPAS.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: QR phải được coi là input không đáng tin cậy; giới hạn MIME/dung lượng/kích thước ảnh, allow-list scheme/version và rate limit decode ngăn parser ảnh trở thành đường tấn công. Dùng ImageSharp managed binding giúp môi trường deploy container không phụ thuộc native graphics library.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:

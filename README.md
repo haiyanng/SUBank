@@ -46,4 +46,4 @@ Các secret trên chỉ là dữ liệu demo. Production phải cấp `Connectio
 
 ## Phạm vi
 
-P0 đã có authentication/authorization, khóa và mở khóa user, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. P1 đã có active-session control, SignalR notification, address workflow và sao kê tháng/năm kèm PDF server; QR và AI chưa triển khai. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md).
+P0 đã có authentication/authorization, khóa và mở khóa user, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. P1 đã có active-session control, SignalR notification, address workflow, sao kê tháng/năm kèm PDF server và SUBank QR nội bộ; AI chưa triển khai. QR hỗ trợ tạo ảnh, quét camera hoặc upload PNG/JPEG/WebP rồi điền trước form chuyển tiền; camera trên trình duyệt yêu cầu HTTPS. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md).

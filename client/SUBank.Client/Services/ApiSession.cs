@@ -6,6 +6,7 @@ using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Statements;
+using SUBank.Contracts.Qr;
 using SUBank.Contracts.Transactions;
 using SUBank.Contracts.Transfers;
 
@@ -70,6 +71,26 @@ public sealed class ApiSession(HttpClient httpClient)
         using var response = await httpClient.SendAsync(request);
         await EnsureSuccessAsync(response);
         return await response.Content.ReadAsByteArrayAsync();
+    }
+
+    public async Task<GeneratedQr?> GenerateQrAsync(GenerateQrRequest model)
+    {
+        using var request = Authorized(HttpMethod.Post, "api/qr/generate", JsonContent.Create(model));
+        using var response = await httpClient.SendAsync(request);
+        await EnsureSuccessAsync(response);
+        return await response.Content.ReadFromJsonAsync<GeneratedQr>();
+    }
+
+    public async Task<QrTransferData?> DecodeQrAsync(byte[] bytes, string fileName, string contentType)
+    {
+        using var form = new MultipartFormDataContent();
+        var image = new ByteArrayContent(bytes);
+        image.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        form.Add(image, "image", fileName);
+        using var request = Authorized(HttpMethod.Post, "api/qr/decode", form);
+        using var response = await httpClient.SendAsync(request);
+        await EnsureSuccessAsync(response);
+        return await response.Content.ReadFromJsonAsync<QrTransferData>();
     }
 
     public async Task<TransferResponse?> TransferAsync(TransferRequest model)
