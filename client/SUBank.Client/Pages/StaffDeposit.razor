@@ -1,0 +1,16 @@
+@page "/staff/deposit"
+@inject ApiSession Session
+<PageTitle>Nộp tiền mặt</PageTitle>
+<h1>Teller - Nộp tiền mặt</h1>
+<EditForm Model="model" OnValidSubmit="SubmitAsync"><div class="card"><div class="card-body">
+    <div class="mb-3"><label class="form-label">Tài khoản nhận</label><InputText class="form-control" @bind-Value="model.Account" /></div>
+    <div class="mb-3"><label class="form-label">Số tiền</label><InputNumber class="form-control" @bind-Value="model.Amount" /></div>
+    <div class="mb-3"><label class="form-label">Nội dung</label><InputText class="form-control" @bind-Value="model.Description" /></div>
+    @if (message is not null) { <div class="alert @(success ? "alert-success" : "alert-danger")">@message</div> }
+    <button class="btn btn-primary">Ghi nhận nộp tiền</button>
+</div></div></EditForm>
+@code {
+    private readonly FormModel model = new() { Account = "1000000001", Amount = 500000, Description = "Nộp tiền tại quầy" }; private string? message; private bool success;
+    private async Task SubmitAsync() { try { var r = await Session.DepositAsync(new(model.Account, model.Amount, model.Description)); success = true; message = $"Thành công: {r?.ReferenceNo}"; } catch (Exception ex) { success = false; message = ex.Message; } }
+    private sealed class FormModel { public string Account { get; set; } = ""; public decimal Amount { get; set; } public string? Description { get; set; } }
+}

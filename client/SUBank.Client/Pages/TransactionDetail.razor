@@ -1,0 +1,30 @@
+@page "/transaction/{ReferenceNo}"
+@inject ApiSession Session
+
+<PageTitle>Chi tiết giao dịch</PageTitle>
+<h1>Chi tiết giao dịch</h1>
+@if (error is not null) { <div class="alert alert-danger">@error</div> }
+else if (item is null) { <p>Đang tải...</p> }
+else
+{
+    <dl class="row card card-body shadow-sm">
+        <dt class="col-sm-4">Mã tham chiếu</dt><dd class="col-sm-8">@item.ReferenceNo</dd>
+        <dt class="col-sm-4">Loại giao dịch</dt><dd class="col-sm-8">@item.Type</dd>
+        <dt class="col-sm-4">Tài khoản nguồn</dt><dd class="col-sm-8">@(item.SourceAccountNumber ?? "Tiền mặt")</dd>
+        <dt class="col-sm-4">Tài khoản nhận</dt><dd class="col-sm-8">@item.DestinationAccountNumber</dd>
+        <dt class="col-sm-4">Số tiền</dt><dd class="col-sm-8 fw-bold">@item.Amount.ToString("N2") VND</dd>
+        <dt class="col-sm-4">Nội dung</dt><dd class="col-sm-8">@(item.Description ?? "—")</dd>
+        <dt class="col-sm-4">Thời gian</dt><dd class="col-sm-8">@item.CreatedAtUtc.ToLocalTime()</dd>
+    </dl>
+}
+
+@code {
+    [Parameter] public string ReferenceNo { get; set; } = "";
+    private SUBank.Contracts.Transactions.TransactionDetail? item;
+    private string? error;
+    protected override async Task OnParametersSetAsync()
+    {
+        try { item = await Session.GetTransactionAsync(ReferenceNo); }
+        catch (Exception ex) { error = ex.Message; }
+    }
+}

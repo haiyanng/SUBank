@@ -1,0 +1,42 @@
+@page "/login"
+
+@inject ApiSession Session
+@inject NavigationManager Navigation
+
+<PageTitle>Đăng nhập</PageTitle>
+
+<div class="row justify-content-center py-4">
+    <div class="col-12 col-md-7 col-lg-5">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3">Đăng nhập SUBank</h1>
+                <p class="text-body-secondary">Tài khoản demo: customer.a, customer.b, teller hoặc admin.</p>
+                <EditForm Model="model" OnValidSubmit="LoginAsync">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3"><label class="form-label">Tên đăng nhập</label><InputText class="form-control" @bind-Value="model.UserName" /></div>
+                    <div class="mb-3"><label class="form-label">Mật khẩu</label><InputText type="password" class="form-control" @bind-Value="model.Password" /></div>
+                    @if (!string.IsNullOrEmpty(error)) { <div class="alert alert-danger">@error</div> }
+                    <button class="btn btn-primary w-100" disabled="@busy">@(busy ? "Đang đăng nhập..." : "Đăng nhập")</button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private readonly LoginModel model = new() { UserName = "customer.a", Password = "Demo@12345" };
+    private string? error;
+    private bool busy;
+    private async Task LoginAsync()
+    {
+        busy = true; error = null;
+        try
+        {
+            await Session.LoginAsync(model.UserName, model.Password);
+            Navigation.NavigateTo(Session.IsInRole("Customer") ? "/accounts" : Session.IsInRole("Teller") ? "/staff/deposit" : "/staff/users");
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { busy = false; }
+    }
+    private sealed class LoginModel { public string UserName { get; set; } = ""; public string Password { get; set; } = ""; }
+}

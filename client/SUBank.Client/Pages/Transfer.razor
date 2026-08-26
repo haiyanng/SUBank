@@ -1,0 +1,19 @@
+@page "/transfer"
+@inject ApiSession Session
+<PageTitle>Chuyển tiền</PageTitle>
+<h1>Chuyển tiền nội bộ</h1>
+<div class="card shadow-sm"><div class="card-body"><EditForm Model="model" OnValidSubmit="SubmitAsync">
+    <div class="mb-3"><label class="form-label">Tài khoản nguồn</label><InputText class="form-control" @bind-Value="model.Source" /></div>
+    <div class="mb-3"><label class="form-label">Tài khoản nhận</label><InputText class="form-control" @bind-Value="model.Destination" /></div>
+    <div class="mb-3"><label class="form-label">Số tiền</label><InputNumber class="form-control" @bind-Value="model.Amount" /></div>
+    <div class="mb-3"><label class="form-label">Nội dung</label><InputText class="form-control" @bind-Value="model.Description" /></div>
+    <div class="mb-3"><label class="form-label">Mật khẩu giao dịch</label><InputText type="password" class="form-control" @bind-Value="model.TransactionPassword" /></div>
+    @if (message is not null) { <div class="alert @(success ? "alert-success" : "alert-danger")">@message</div> }
+    <button class="btn btn-primary" disabled="@busy">Xác nhận chuyển</button>
+</EditForm></div></div>
+@code {
+    private readonly FormModel model = new() { Source = "1000000001", Destination = "1000000002", TransactionPassword = "123456" };
+    private string? message; private bool success; private bool busy;
+    private async Task SubmitAsync() { busy = true; try { var r = await Session.TransferAsync(new(model.Source, model.Destination, model.Amount, model.Description, model.TransactionPassword)); success = true; message = $"Thành công. Mã giao dịch: {r?.ReferenceNo}"; } catch (Exception ex) { success = false; message = ex.Message; } finally { busy = false; } }
+    private sealed class FormModel { public string Source { get; set; } = ""; public string Destination { get; set; } = ""; public decimal Amount { get; set; } = 100000; public string? Description { get; set; } = "Demo P0"; public string TransactionPassword { get; set; } = ""; }
+}

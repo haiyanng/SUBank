@@ -1,0 +1,40 @@
+@inject ApiSession Session
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<nav class="navbar navbar-expand-md bg-primary" data-bs-theme="dark">
+    <div class="container">
+        <a class="navbar-brand fw-semibold" href="">SUBank</a>
+        <button class="navbar-toggler" type="button" title="Toggle navigation" aria-label="Toggle navigation" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse @NavMenuCssClass">
+            <div class="navbar-nav ms-auto">
+                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Trang chủ</NavLink>
+                @if (Session.IsInRole("Customer"))
+                {
+                    <NavLink class="nav-link" href="accounts">Tài khoản</NavLink>
+                    <NavLink class="nav-link" href="transfer">Chuyển tiền</NavLink>
+                }
+                @if (Session.IsInRole("Teller")) { <NavLink class="nav-link" href="staff/deposit">Nộp tiền</NavLink> }
+                @if (Session.IsInRole("Admin"))
+                {
+                    <NavLink class="nav-link" href="staff/users">Mở khóa</NavLink>
+                    <NavLink class="nav-link" href="staff/audit">Audit</NavLink>
+                }
+                @if (Session.Current is null) { <NavLink class="nav-link" href="login">Đăng nhập</NavLink> }
+                else { <button class="btn btn-link nav-link" @onclick="LogoutAsync">Đăng xuất (@Session.Current.User.UserName)</button> }
+            </div>
+        </div>
+    </div>
+</nav>
+
+@code {
+    private bool collapseNavMenu = true;
+    private string NavMenuCssClass => collapseNavMenu ? string.Empty : "show";
+
+    private void ToggleNavMenu() => collapseNavMenu = !collapseNavMenu;
+    protected override void OnInitialized() => Session.Changed += StateHasChanged;
+    private async Task LogoutAsync() { await Session.LogoutAsync(); Navigation.NavigateTo("/"); }
+    public void Dispose() => Session.Changed -= StateHasChanged;
+}
