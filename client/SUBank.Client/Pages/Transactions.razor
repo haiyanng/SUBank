@@ -1,4 +1,5 @@
 @page "/transactions/{AccountNumber}"
+@implements IDisposable
 @inject ApiSession Session
 <PageTitle>Lịch sử giao dịch</PageTitle>
 <h1>Lịch sử @AccountNumber</h1>
@@ -10,5 +11,15 @@ else { <div class="table-responsive"><table class="table"><thead><tr><th>Mã</th
 @code {
     [Parameter] public string AccountNumber { get; set; } = "";
     private List<TransactionSummary>? items; private string? error;
-    protected override async Task OnParametersSetAsync() { try { items = await Session.GetTransactionsAsync(AccountNumber) ?? []; } catch (Exception ex) { error = ex.Message; } }
+    protected override void OnInitialized() => Session.BankingDataChanged += OnBankingDataChanged;
+    protected override Task OnParametersSetAsync() => LoadAsync();
+    private void OnBankingDataChanged() => _ = InvokeAsync(LoadAsync);
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AccountNumber)) return;
+        try { items = await Session.GetTransactionsAsync(AccountNumber) ?? []; error = null; }
+        catch (Exception ex) { error = ex.Message; }
+        StateHasChanged();
+    }
+    public void Dispose() => Session.BankingDataChanged -= OnBankingDataChanged;
 }

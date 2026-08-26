@@ -18,7 +18,7 @@ using SUBank.Infrastructure.Persistence;
 namespace SUBank.Infrastructure.Authentication;
 
 public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBankDbContext dbContext,
-    IActiveSessionStore activeSessionStore, IOptions<JwtOptions> options) : IAuthService
+    IActiveSessionStore activeSessionStore, IRealtimeNotifier realtimeNotifier, IOptions<JwtOptions> options) : IAuthService
 {
     private readonly JwtOptions jwt = options.Value;
 
@@ -51,7 +51,10 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             var oldSessionId = await activeSessionStore.ReplaceAsync(
                 user.Id, session.SessionId, session.RefreshExpiresAtUtc - DateTimeOffset.UtcNow, cancellationToken);
             if (!string.IsNullOrEmpty(oldSessionId) && oldSessionId != session.SessionId)
+            {
                 await RevokePersistedSessionAsync(user.Id, oldSessionId, "REPLACED", cancellationToken);
+                await realtimeNotifier.ForceLogoutAsync(oldSessionId, CancellationToken.None);
+            }
             await AuditAsync(user.Id, "LOGIN_SUCCESS", AuditResult.Success, cancellationToken);
             return session;
         }

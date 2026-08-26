@@ -6,7 +6,7 @@
 
 - .NET SDK 10
 - SQL Server local có hỗ trợ Windows Authentication
-- Redis tại `localhost:6379` để login và protected API hoạt động trong Development
+- Redis tại `localhost:6379` để login, protected API và realtime session hoạt động trong Development
 - Development HTTPS certificate (`dotnet dev-certs https --trust` nếu máy chưa tin cậy)
 
 Database Development là `SUBankV2`. API tự áp dụng migration và tạo dữ liệu demo khi khởi động trong môi trường Development.
@@ -46,4 +46,4 @@ Các secret trên chỉ là dữ liệu demo. Production phải cấp `Connectio
 
 ## Phạm vi
 
-P0 đã có authentication/authorization, khóa và mở khóa user, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. P1 active-session control đã được triển khai trên feature branch; SignalR, QR, PDF, address workflow và AI chưa triển khai. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md).
+P0 đã có authentication/authorization, khóa và mở khóa user, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. P1 đã có active-session control và SignalR notification best-effort; QR, PDF, address workflow và AI chưa triển khai. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md).

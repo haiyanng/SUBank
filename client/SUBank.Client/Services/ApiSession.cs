@@ -13,6 +13,7 @@ public sealed class ApiSession(HttpClient httpClient)
 {
     public AuthResponse? Current { get; private set; }
     public event Action? Changed;
+    public event Action? BankingDataChanged;
 
     public async Task TryRestoreAsync()
     {
@@ -48,6 +49,12 @@ public sealed class ApiSession(HttpClient httpClient)
     }
 
     public bool IsInRole(string role) => Current?.User.Roles.Contains(role) == true;
+    internal void NotifyBankingDataChanged() => BankingDataChanged?.Invoke();
+    internal void EndFromServer()
+    {
+        Current = null;
+        Changed?.Invoke();
+    }
     public Task<List<AccountSummary>?> GetAccountsAsync() => GetAsync<List<AccountSummary>>("api/accounts");
     public Task<List<TransactionSummary>?> GetTransactionsAsync(string account) => GetAsync<List<TransactionSummary>>($"api/accounts/{account}/transactions");
     public Task<TransactionDetail?> GetTransactionAsync(string referenceNo) => GetAsync<TransactionDetail>($"api/transactions/{referenceNo}");

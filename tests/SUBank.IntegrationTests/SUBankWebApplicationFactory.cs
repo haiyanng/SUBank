@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SUBank.Application.Abstractions;
+using SUBank.Api.Realtime;
 
 namespace SUBank.IntegrationTests;
 
@@ -18,7 +19,42 @@ public sealed class SUBankWebApplicationFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<IActiveSessionStore>();
             services.AddSingleton<IActiveSessionStore, TestActiveSessionStore>();
+            services.RemoveAll<IRealtimeNotifier>();
+            services.AddSingleton<TestRealtimeNotifier>();
+            services.AddSingleton<IRealtimeNotifier>(provider => provider.GetRequiredService<TestRealtimeNotifier>());
         });
+    }
+}
+
+public sealed class TestRealtimeNotifier(SignalRRealtimeNotifier inner) : IRealtimeNotifier
+{
+    public ConcurrentQueue<string> ForcedSessions { get; } = new();
+    public ConcurrentQueue<(string UserId, string AccountNumber)> BalanceChanges { get; } = new();
+    public ConcurrentQueue<(string UserId, string ReferenceNo, string AccountNumber)> Transactions { get; } = new();
+
+    public Task ForceLogoutAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        ForcedSessions.Enqueue(sessionId);
+        return inner.ForceLogoutAsync(sessionId, cancellationToken);
+    }
+
+    public Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken)
+    {
+        BalanceChanges.Enqueue((userId, accountNumber));
+        return inner.BalanceChangedAsync(userId, accountNumber, cancellationToken);
+    }
+
+    public Task TransactionReceivedAsync(string userId, string referenceNo, string accountNumber, CancellationToken cancellationToken)
+    {
+        Transactions.Enqueue((userId, referenceNo, accountNumber));
+        return inner.TransactionReceivedAsync(userId, referenceNo, accountNumber, cancellationToken);
+    }
+
+    public void Clear()
+    {
+        ForcedSessions.Clear();
+        BalanceChanges.Clear();
+        Transactions.Clear();
     }
 }
 

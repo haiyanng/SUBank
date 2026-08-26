@@ -145,6 +145,19 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: test double-spend không được tạo hai login cho cùng user sau khi có single-session; hai request concurrent phải dùng cùng access token. In-memory fake chỉ kiểm tra contract/middleware, không thay thế integration Redis thật. Rate limiter theo IP phải đủ cho test suite hợp lệ nhưng Identity lockout vẫn là lớp chặn brute-force theo user.
 
+## Entry 012 - P1 SignalR realtime notifications
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: thêm SignalR `ForceLogout`, `BalanceChanged` và `TransactionReceived` theo cơ chế best-effort.
+- Tóm tắt prompt/công việc thực tế: sau khi chủ dự án cho phép commit/push/merge active-session feature, AI đã merge feature đó vào `develop`, tạo `feature/realtime-notifications` từ `develop` mới nhất và triển khai vertical slice realtime. Hub chỉ chấp nhận JWT hợp lệ; notification giao dịch chỉ phát sau SQL commit; Blazor nhận event rồi tải lại dữ liệu qua REST.
+- File/module bị tác động: Contracts realtime DTO; Application notifier abstraction; API BankingHub/notifier/JWT hub configuration; Infrastructure Auth/Banking/Staff services; Blazor realtime service, app lifecycle, status component và trang account/transaction; integration tests; README và tài liệu.
+- Kiểm chứng đã thực hiện: restore; build toàn solution 0 warning/0 error; 23/23 test pass. Integration test kết nối SignalR Long Polling thật với JWT, login lần hai và nhận `ForceLogout`; token cũ đồng thời bị REST trả `401`. Test transfer/deposit xác nhận notification chỉ xuất hiện ở nhánh commit mới, không phát lại khi idempotency replay.
+- Kết quả: SignalR không mang balance làm nguồn sự thật. Client nhận event, hiển thông báo và refetch REST. Lỗi gửi event được technical log nhưng không làm giao dịch đã commit thất bại.
+- Vấn đề còn lại: chưa browser-test WebSocket trên HTTPS deployment và chưa có Redis runtime local; integration test dùng TestServer Long Polling và active-session store có cùng contract. Dự án chỉ nhắm một API instance nên không thêm SignalR backplane.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: realtime event phải phát sau commit và không được biến thành dependency của core banking. `ForceLogout` cho UX nhanh, nhưng request authorization vẫn phải do Redis active-session middleware quyết định.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:

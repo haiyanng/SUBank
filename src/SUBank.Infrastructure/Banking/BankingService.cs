@@ -18,7 +18,8 @@ namespace SUBank.Infrastructure.Banking;
 public sealed class BankingService(
     SUBankDbContext dbContext,
     UserManager<ApplicationUser> userManager,
-    IPasswordHasher<ApplicationUser> passwordHasher) : IBankingService
+    IPasswordHasher<ApplicationUser> passwordHasher,
+    IRealtimeNotifier realtimeNotifier) : IBankingService
 {
     public async Task<IReadOnlyList<AccountSummary>> GetAccountsAsync(string userId, CancellationToken cancellationToken) =>
         await dbContext.BankAccounts.AsNoTracking()
@@ -101,7 +102,7 @@ public sealed class BankingService(
         var source = await dbContext.BankAccounts.Include(x => x.CustomerProfile)
             .SingleOrDefaultAsync(x => x.AccountNumber == request.SourceAccountNumber, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy tài khoản nguồn.");
-        var destination = await dbContext.BankAccounts
+        var destination = await dbContext.BankAccounts.Include(x => x.CustomerProfile)
             .SingleOrDefaultAsync(x => x.AccountNumber == request.DestinationAccountNumber, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy tài khoản nhận.");
         if (source.CustomerProfile.UserId != userId) throw new NotFoundException("Không tìm thấy tài khoản nguồn.");
@@ -135,7 +136,18 @@ public sealed class BankingService(
             await transaction.RollbackAsync(cancellationToken);
             throw new ConflictException("Yêu cầu bị trùng hoặc dữ liệu vừa thay đổi.");
         }
+        await NotifyTransactionAsync(source.CustomerProfile.UserId, source.AccountNumber,
+            destination.CustomerProfile.UserId, destination.AccountNumber, item.ReferenceNo);
         return new TransferResponse(item.ReferenceNo, item.Amount, source.AccountNumber, destination.AccountNumber, now, false);
+    }
+
+    private async Task NotifyTransactionAsync(string sourceUserId, string sourceAccountNumber,
+        string destinationUserId, string destinationAccountNumber, string referenceNo)
+    {
+        await realtimeNotifier.BalanceChangedAsync(sourceUserId, sourceAccountNumber, CancellationToken.None);
+        await realtimeNotifier.TransactionReceivedAsync(sourceUserId, referenceNo, sourceAccountNumber, CancellationToken.None);
+        await realtimeNotifier.BalanceChangedAsync(destinationUserId, destinationAccountNumber, CancellationToken.None);
+        await realtimeNotifier.TransactionReceivedAsync(destinationUserId, referenceNo, destinationAccountNumber, CancellationToken.None);
     }
 
     private async Task EnsureOwnedAccountAsync(string userId, string accountNumber, CancellationToken cancellationToken)

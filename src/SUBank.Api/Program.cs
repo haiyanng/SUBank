@@ -3,6 +3,8 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using SUBank.Api.Infrastructure;
+using SUBank.Api.Realtime;
+using SUBank.Application.Abstractions;
 using SUBank.Infrastructure;
 using SUBank.Infrastructure.Authentication;
 using SUBank.Infrastructure.Persistence;
@@ -14,6 +16,9 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<SignalRRealtimeNotifier>();
+builder.Services.AddSingleton<IRealtimeNotifier>(provider => provider.GetRequiredService<SignalRRealtimeNotifier>());
 builder.Services.AddInfrastructure(builder.Configuration);
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Missing Jwt configuration.");
@@ -32,6 +37,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = jwt.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
             ClockSkew = TimeSpan.FromSeconds(30)
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/hubs/banking"))
+                    context.Token = accessToken;
+                return Task.CompletedTask;
+            }
         };
     });
 builder.Services.AddAuthorization();
@@ -102,6 +117,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
+app.MapHub<BankingHub>("/hubs/banking");
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
     .WithName("Health")
     .WithTags("System")

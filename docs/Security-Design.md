@@ -54,7 +54,7 @@ Redis lưu một active `sid` cho mỗi user. Thay session phải nguyên tử. 
 
 Khi active key thiếu, không khớp hoặc Redis unavailable, hệ thống không được bỏ qua kiểm tra. Trả `401` cho session không hợp lệ và `503` khi dependency cần thiết unavailable. SignalR `ForceLogout` chỉ cải thiện UX; middleware và Redis mới có thẩm quyền bảo mật.
 
-Trạng thái implementation feature `active-session-control`: đã có Redis adapter, atomic replace/compare-delete bằng Lua, SQL `UserSession`, middleware fail-closed, refresh/logout gắn với active `sid`, cookie `Secure`, CSRF custom header kèm Origin allow-list, correlation ID và rate limit cho login/transaction password. SignalR chưa thuộc feature này.
+Trạng thái implementation: đã có Redis adapter, atomic replace/compare-delete bằng Lua, SQL `UserSession`, middleware fail-closed, refresh/logout gắn với active `sid`, cookie `Secure`, CSRF custom header kèm Origin allow-list, correlation ID và rate limit cho login/transaction password. SignalR đã gửi `ForceLogout` best-effort cho session cũ; integration test vẫn xác nhận REST của session cũ bị Redis/middleware trả `401`.
 
 ## Bảo vệ nghiệp vụ tiền
 

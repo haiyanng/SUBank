@@ -12,5 +12,6 @@ var apiBaseUrl = string.IsNullOrWhiteSpace(builder.Configuration["ApiBaseUrl"])
     : builder.Configuration["ApiBaseUrl"]!;
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
 builder.Services.AddScoped<ApiSession>();
+builder.Services.AddScoped<RealtimeService>();
 
 await builder.Build().RunAsync();

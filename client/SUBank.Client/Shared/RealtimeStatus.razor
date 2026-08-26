@@ -1,0 +1,16 @@
+@implements IDisposable
+@inject RealtimeService Realtime
+
+@if (!string.IsNullOrWhiteSpace(Realtime.LastMessage))
+{
+    <div class="alert alert-info alert-dismissible fade show mb-3" role="status">
+        @Realtime.LastMessage
+        <button type="button" class="btn-close" aria-label="Đóng" @onclick="Realtime.ClearMessage"></button>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Realtime.MessageChanged += Refresh;
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() => Realtime.MessageChanged -= Refresh;
+}

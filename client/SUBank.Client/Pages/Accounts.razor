@@ -1,4 +1,5 @@
 @page "/accounts"
+@implements IDisposable
 @inject ApiSession Session
 
 <PageTitle>Tài khoản</PageTitle>
@@ -26,7 +27,15 @@ else
     private string? error;
     protected override async Task OnInitializedAsync()
     {
-        try { accounts = await Session.GetAccountsAsync() ?? []; }
-        catch (Exception ex) { error = ex.Message; }
+        Session.BankingDataChanged += OnBankingDataChanged;
+        await LoadAsync();
     }
+    private void OnBankingDataChanged() => _ = InvokeAsync(LoadAsync);
+    private async Task LoadAsync()
+    {
+        try { accounts = await Session.GetAccountsAsync() ?? []; error = null; }
+        catch (Exception ex) { error = ex.Message; }
+        StateHasChanged();
+    }
+    public void Dispose() => Session.BankingDataChanged -= OnBankingDataChanged;
 }
