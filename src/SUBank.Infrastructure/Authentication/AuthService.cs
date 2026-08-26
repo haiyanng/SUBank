@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SUBank.Application.Abstractions;
 using SUBank.Application.Exceptions;
+using SUBank.Application.Rules;
 using SUBank.Contracts.Auth;
 using SUBank.Domain.Entities;
 using SUBank.Domain.Enums;
@@ -24,11 +25,14 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
 
     public async Task<AuthSession> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
     {
-        var user = await userManager.FindByNameAsync(request.UserName.Trim());
+        var loginName = request.UserName.Trim();
+        var user = await userManager.FindByNameAsync(loginName);
         if (user is null || !user.IsActive)
-            throw new AuthenticationException("Tên đăng nhập hoặc mật khẩu không đúng.");
+            throw new AuthenticationException("Số điện thoại/tên đăng nhập hoặc mật khẩu không đúng.");
         if (await userManager.IsLockedOutAsync(user))
             throw new AuthenticationException("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        if (!await LoginNameMatchesCustomerProfileAsync(user, loginName, cancellationToken))
+            throw new AuthenticationException("Số điện thoại/tên đăng nhập hoặc mật khẩu không đúng.");
 
         if (!await userManager.CheckPasswordAsync(user, request.Password))
         {
@@ -40,7 +44,7 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
                 dbContext.AuditLogs.Add(NewAudit(user.Id, "USER_LOCKED", AuditResult.Success));
             }
             await AuditAsync(user.Id, "LOGIN_FAILED", AuditResult.Failure, cancellationToken);
-            throw new AuthenticationException("Tên đăng nhập hoặc mật khẩu không đúng.");
+            throw new AuthenticationException("Số điện thoại/tên đăng nhập hoặc mật khẩu không đúng.");
         }
 
         await userManager.ResetAccessFailedCountAsync(user);
@@ -172,6 +176,17 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             .ToListAsync(cancellationToken);
         foreach (var token in tokens) token.RevokedAtUtc = now;
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<bool> LoginNameMatchesCustomerProfileAsync(ApplicationUser user, string loginName,
+        CancellationToken cancellationToken)
+    {
+        if (!await userManager.IsInRoleAsync(user, "Customer")) return true;
+        if (!CustomerLoginRules.IsCanonicalPhoneNumber(loginName) ||
+            !string.Equals(user.UserName, loginName, StringComparison.Ordinal)) return false;
+
+        return await dbContext.CustomerProfiles.AsNoTracking()
+            .AnyAsync(x => x.UserId == user.Id && x.Phone == loginName, cancellationToken);
     }
 
     private async Task AuditAsync(string userId, string action, AuditResult result, CancellationToken cancellationToken)
