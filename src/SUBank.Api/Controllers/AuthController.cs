@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SUBank.Application.Abstractions;
 using SUBank.Application.Exceptions;
 using SUBank.Contracts.Auth;
@@ -9,12 +10,13 @@ namespace SUBank.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IAuthService authService, IWebHostEnvironment environment) : ControllerBase
+public sealed class AuthController(IAuthService authService) : ControllerBase
 {
     private const string RefreshCookie = "subank_refresh";
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("Login")]
     public async Task<ActionResult<AuthResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
         var session = await authService.LoginAsync(request, cancellationToken);
@@ -50,5 +52,5 @@ public sealed class AuthController(IAuthService authService, IWebHostEnvironment
     }
 
     private void WriteRefreshCookie(AuthSession session) => Response.Cookies.Append(RefreshCookie, session.RefreshToken,
-        new CookieOptions { HttpOnly = true, Secure = !environment.IsDevelopment(), SameSite = SameSiteMode.Strict, Expires = session.RefreshExpiresAtUtc, Path = "/api/auth" });
+        new CookieOptions { HttpOnly = true, Secure = true, SameSite = SameSiteMode.Strict, Expires = session.RefreshExpiresAtUtc, Path = "/api/auth" });
 }

@@ -46,6 +46,23 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0
         }));
+    options.AddPolicy("Login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        }));
+    options.AddPolicy("TransactionPassword", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ??
+        context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        }));
 });
 builder.Services.AddCors(options =>
 {
@@ -66,6 +83,7 @@ await using (var scope = app.Services.CreateAsyncScope())
     await initializer.InitializeAsync(app.Environment.IsDevelopment());
 }
 
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseRouting();
 
 if (app.Environment.IsDevelopment())
@@ -77,7 +95,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseMiddleware<RefreshCookieProtectionMiddleware>();
 app.UseAuthentication();
+app.UseMiddleware<ActiveSessionMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
 

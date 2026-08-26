@@ -1,4 +1,4 @@
-# Thiết kế cơ sở dữ liệu SUBank V2.4 - P0
+# Thiết kế cơ sở dữ liệu SUBank V2.4 - P0/P1
 
 ## Nguyên tắc
 
@@ -90,9 +90,9 @@ Unique index: `(CreatedByUserId, IdempotencyKey)`. Check theo loại:
 | `Details` | `nvarchar(1000)` | nullable, đã lọc secret/PII |
 | `CreatedAtUtc` | `datetimeoffset` | required |
 
-## Bảng chuẩn bị cho P1
+## Bảng P1
 
-Các bảng sau thuộc schema tổng thể nhưng chỉ triển khai khi vertical slice tương ứng bắt đầu: `Beneficiary`, `AddressChangeRequest`, `RefreshToken`, `UserSession`, `AiQueryLog`. Riêng `RefreshToken` cần trong Auth P0 nên sẽ được triển khai cùng Authentication.
+`RefreshToken` đã được triển khai trong Auth P0. `UserSession` được triển khai trong feature active-session P1. `AddressChangeRequest` và `AiQueryLog` chỉ được thêm khi vertical slice tương ứng bắt đầu; `Beneficiary` thuộc P2.
 
 ### RefreshToken
 
@@ -107,6 +107,20 @@ Các bảng sau thuộc schema tổng thể nhưng chỉ triển khai khi vertic
 | `CreatedAtUtc` | `datetimeoffset` | required |
 | `ReplacedByTokenId` | `bigint` | nullable self FK |
 
+### UserSession
+
+| Cột | Kiểu | Quy tắc |
+|---|---|---|
+| `Id` | `bigint` | PK, identity; không expose |
+| `UserId` | `nvarchar(450)` | required FK |
+| `SessionId` | `varchar(64)` | required; unique theo user; không log/expose |
+| `CreatedAtUtc` | `datetimeoffset` | required |
+| `ExpiresAtUtc` | `datetimeoffset` | required |
+| `RevokedAtUtc` | `datetimeoffset` | nullable |
+| `RevocationReason` | `varchar(50)` | nullable; mã lý do an toàn |
+
+SQL chỉ lưu lịch sử. Redis key theo user mới là nguồn quyết định `sid` đang active; không lưu raw access/refresh token trong bảng này.
+
 ## Index tối thiểu
 
 - Identity normalized username.
@@ -118,6 +132,7 @@ Các bảng sau thuộc schema tổng thể nhưng chỉ triển khai khi vertic
 - `FinancialTransaction.CreatedByUserId, IdempotencyKey` unique.
 - `AuditLog.CreatedAtUtc`; `AuditLog.UserId, CreatedAtUtc`.
 - `RefreshToken.TokenHash` unique; `RefreshToken.UserId, SessionId`.
+- `UserSession.UserId, SessionId` unique; `UserSession.UserId, RevokedAtUtc`.
 
 ## Format business identifier
 

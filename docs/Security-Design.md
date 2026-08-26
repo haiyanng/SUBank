@@ -2,7 +2,7 @@
 
 ## Trạng thái
 
-ĐÃ CHỐT THIẾT KẾ NỀN TẢNG - CHƯA TRIỂN KHAI
+ĐANG TRIỂN KHAI THEO FEATURE - ACTIVE SESSION ĐÃ CÓ CODE VÀ TEST NỀN TẢNG
 
 Tài liệu này mô tả control dự kiến. Một control chỉ được coi là hoàn thành khi có code, cấu hình và test evidence tương ứng.
 
@@ -53,6 +53,8 @@ Hệ thống áp dụng cả role-based authorization và resource ownership:
 Redis lưu một active `sid` cho mỗi user. Thay session phải nguyên tử. Protected request kiểm tra `sub`/`sid` sau JWT authentication và trước khi chạy use case.
 
 Khi active key thiếu, không khớp hoặc Redis unavailable, hệ thống không được bỏ qua kiểm tra. Trả `401` cho session không hợp lệ và `503` khi dependency cần thiết unavailable. SignalR `ForceLogout` chỉ cải thiện UX; middleware và Redis mới có thẩm quyền bảo mật.
+
+Trạng thái implementation feature `active-session-control`: đã có Redis adapter, atomic replace/compare-delete bằng Lua, SQL `UserSession`, middleware fail-closed, refresh/logout gắn với active `sid`, cookie `Secure`, CSRF custom header kèm Origin allow-list, correlation ID và rate limit cho login/transaction password. SignalR chưa thuộc feature này.
 
 ## Bảo vệ nghiệp vụ tiền
 

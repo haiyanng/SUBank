@@ -132,6 +132,19 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: build xanh và smoke test không chứng minh tính đúng của luồng tiền; test concurrency phải kiểm tra cả số response thành công, số transaction được ghi và invariant số dư. Test tốt có thể phát hiện hành vi framework khó thấy như lockout counter reset và JWT trùng trong cùng timestamp.
 
+## Entry 011 - P1 active session control
+
+- Ngày: 2026-08-26
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: triển khai feature P1 kiểm soát một active session cho mỗi user; không triển khai SignalR hoặc feature P1 tiếp theo.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu chia P1 thành các feature branch phụ thuộc, mỗi feature phải dừng để review/commit/merge. AI đã audit toàn bộ P0 và docs, lập thứ tự feature, tạo `feature/active-session-control` từ `develop` đã pull, sau đó thêm Redis active-session pointer, SQL session history, middleware và test.
+- File/module bị tác động: Domain `UserSession`; Application session abstraction/exception; Infrastructure Redis adapter, auth flow, EF configuration/migration; API middleware/rate limiting/cookie; Client CSRF header; integration test; README và tài liệu thiết kế.
+- Kiểm chứng đã thực hiện: restore; build toàn solution 0 warning/0 error; 22/22 test pass bằng Windows identity; migration áp dụng vào SQL Server Development; API HTTPS khởi động; `/health` và Swagger trả 200; khi Redis không chạy, login trả ProblemDetails `503` và session/token vừa tạo được revoke. Middleware test xác nhận active session được qua, session cũ bị chặn và dependency unavailable fail-closed.
+- Kết quả: Redis là nguồn thẩm quyền của active `sid`; Lua script thay con trỏ và compare-delete nguyên tử; SQL chỉ lưu lịch sử. Refresh rotation dùng SQL transaction isolation `Serializable`; refresh-token reuse thu hồi session. Cookie refresh luôn `Secure`; refresh/logout có custom CSRF header và Origin allow-list; request có correlation ID.
+- Vấn đề còn lại: máy kiểm thử không có Redis runtime hoặc Docker, nên chưa có bằng chứng integration với Redis thật cho Lua success path; đã có bằng chứng fail-closed qua adapter thật khi Redis unavailable. Cookie/CSRF cần browser test thật. SignalR `ForceLogout` là feature kế tiếp và chưa được làm.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: test double-spend không được tạo hai login cho cùng user sau khi có single-session; hai request concurrent phải dùng cùng access token. In-memory fake chỉ kiểm tra contract/middleware, không thay thế integration Redis thật. Rate limiter theo IP phải đủ cho test suite hợp lệ nhưng Identity lockout vẫn là lớp chặn brute-force theo user.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:

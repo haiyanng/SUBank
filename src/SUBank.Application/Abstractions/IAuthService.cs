@@ -10,4 +10,4 @@ public interface IAuthService
     Task<UserSummary?> GetCurrentUserAsync(string userId, CancellationToken cancellationToken);
 }
 
-public sealed record AuthSession(AuthResponse Response, string RefreshToken, DateTimeOffset RefreshExpiresAtUtc);
+public sealed record AuthSession(AuthResponse Response, string RefreshToken, DateTimeOffset RefreshExpiresAtUtc, string SessionId);
