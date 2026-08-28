@@ -2,20 +2,55 @@
 @inject ApiSession Session
 @inject RealtimeService Realtime
 
-<Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
-        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-    </Found>
-</Router>
+@if (!initialized)
+{
+    <div class="session-bootstrap" role="status" aria-live="polite">
+        <span class="spinner-border" aria-hidden="true"></span>
+        <strong>Đang khôi phục phiên...</strong>
+    </div>
+}
+else
+{
+    <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+        <Found Context="routeData">
+            @if (Session.Current is null && RequiresAuthentication(routeData.PageType))
+            {
+                <RedirectToLogin />
+            }
+            else
+            {
+                <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            }
+        </Found>
+    </Router>
+}
 
 @code {
+    private bool initialized;
+
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
-        await Session.TryRestoreAsync();
-        await Realtime.SyncAsync();
+        try
+        {
+            await Session.TryRestoreAsync();
+            await Realtime.SyncAsync();
+        }
+        catch (HttpRequestException)
+        {
+            // API không truy cập được: tiếp tục tới login để người dùng nhận thông báo phù hợp khi thử đăng nhập.
+        }
+        finally
+        {
+            initialized = true;
+        }
     }
+
+    private static bool RequiresAuthentication(Type pageType) =>
+        pageType != typeof(Pages.Login) &&
+        pageType != typeof(Pages.Forbidden) &&
+        pageType != typeof(Pages.NotFound);
 
     private void OnSessionChanged() => _ = InvokeAsync(Realtime.SyncAsync);
     public void Dispose() => Session.Changed -= OnSessionChanged;

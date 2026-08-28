@@ -41,9 +41,9 @@ Development tách HTTPS port và chỉ cho phép exact Client origin cùng crede
 
 Hệ thống áp dụng cả role-based authorization và resource ownership:
 
-- Customer chỉ truy cập account, transaction, statement, beneficiary, request và AI data của chính mình.
+- Customer chỉ truy cập account, transaction, statement, beneficiary và AI data của chính mình.
 - Teller Cash Deposit yêu cầu role Teller.
-- Unlock User, xử lý Address Request và xem Audit Log yêu cầu role Admin.
+- Unlock User và xem Audit Log yêu cầu role Admin.
 - Teller gọi Admin endpoint phải nhận `403`.
 - Admin gọi Teller Cash Deposit endpoint phải nhận `403`.
 - Việc ẩn menu trên Client không thay thế API authorization.

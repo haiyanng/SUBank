@@ -101,8 +101,8 @@
 - Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu bỏ qua CustomerContact và chỉ sử dụng CustomerProfile. Quyết định được cụ thể hóa để tránh trùng Email/Phone giữa business profile và ASP.NET Core Identity.
 - File/module bị tác động: `docs/PROJECT-BLUEPRINT.md`, `docs/Security-Design.md`, `docs/AI-Usage-Report.md`.
 - Kiểm chứng đã thực hiện: đối chiếu login identifier, quan hệ `ApplicationUser` - `CustomerProfile`, profile endpoint, seed username và ownership authorization.
-- Kết quả: không có entity/bảng `CustomerContact`; `CustomerProfile` giữ FullName, DateOfBirth, IdentityNumber demo, Phone, Email và hai địa chỉ; login dùng `UserName`; Identity Email/Phone không là nguồn contact nghiệp vụ; Teller/Admin không có CustomerProfile.
-- Vấn đề còn lại: độ dài, nullability, unique/index và validation của Phone, Email, IdentityNumber sẽ được chốt trong Database Design/ERD.
+- Kết quả: không có entity/bảng `CustomerContact`; `CustomerProfile` giữ FullName, DateOfBirth, IdentityCardNumber demo, Phone, Email và hai địa chỉ; login dùng `UserName`; Identity Email/Phone không là nguồn contact nghiệp vụ; Teller/Admin không có CustomerProfile.
+- Vấn đề còn lại: độ dài, nullability, unique/index và validation của Phone, Email, IdentityCardNumber sẽ được chốt trong Database Design/ERD.
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: một khái niệm nghiệp vụ cần một nguồn sự thật; dùng Email đồng thời cho login Identity và contact profile tạo nhu cầu đồng bộ không cần thiết; username-only login giúp mô hình demo đơn giản hơn.
 
@@ -161,6 +161,7 @@
 ## Entry 013 - P1 quy trình đổi địa chỉ
 
 - Ngày: 2026-08-26
+- Trạng thái hiện tại: ĐÃ GỠ BỎ khỏi phạm vi chạy của dự án ngày 2026-08-28 theo quyết định của chủ dự án; xem Entry 028. Nội dung bên dưới được giữ lại như lịch sử sử dụng AI, không mô tả tính năng hiện còn hoạt động.
 - Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
 - Tính năng/công việc: Customer tạo yêu cầu đổi địa chỉ; Admin duyệt hoặc từ chối.
 - Tóm tắt prompt/công việc thực tế: AI đã commit/push/merge realtime feature theo ủy quyền, sau đó tạo `feature/address-change-workflow` từ `develop`. Vertical slice bổ sung entity/migration, validation, service transaction, Customer/Admin API, Bootstrap UI, RBAC/audit và integration test.
@@ -258,7 +259,7 @@
 - File/module bị tác động: Application customer-login rule; Infrastructure AuthService và DatabaseInitializer; Login, Customer dashboard/sidebar; README, Blueprint, Security Design, Database Design và báo cáo này.
 - Kiểm chứng đã thực hiện: build toàn solution; không viết hoặc chạy test theo quyết định hiện tại của chủ dự án trong giai đoạn hoàn thiện tính năng.
 - Kết quả: `0900000001` và `0900000002` là login Customer Development; `teller` và `admin` không đổi. Seed dùng `UserManager.SetUserNameAsync` để giữ nguyên `UserId`, profile, account, transaction, audit và session history. Auth từ chối Customer nếu username không đúng định dạng hoặc không trùng `CustomerProfile.Phone`. UI dùng họ tên để chào và che bớt số điện thoại ở sidebar.
-- Vấn đề còn lại: integration test hiện còn fixture `customer.a`/`customer.b` và sẽ được cập nhật khi dự án quay lại giai đoạn kiểm thử theo yêu cầu. Nếu làm chức năng đổi số điện thoại, phải cập nhật profile/username nguyên tử và thu hồi phiên đăng nhập cũ.
+- Vấn đề còn lại: nếu làm chức năng đổi số điện thoại, phải cập nhật profile/username nguyên tử và thu hồi phiên đăng nhập cũ. Fixture integration test đã được đổi đồng bộ sang số điện thoại, nhưng chưa chạy test theo quyết định hiện tại của chủ dự án.
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: đổi login identifier là thay đổi dữ liệu định danh chứ không chỉ đổi label giao diện; phải giữ khóa user ổn định, fail-fast khi có xung đột và xác định rõ nguồn sự thật để tránh hai giá trị lệch nhau.
 
@@ -313,6 +314,110 @@
 - Vấn đề còn lại: không có.
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: nội dung UI có thể dùng thuật ngữ chung để form gọn hơn, trong khi quy tắc định danh và kiểm tra bảo mật vẫn phải được giữ ở backend.
+
+## Entry 025 - Đồng bộ số điện thoại, username và tài khoản chính
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa seed Development và dữ liệu demo để số điện thoại, tên đăng nhập và số tài khoản chính của Customer là cùng một giá trị.
+- Tóm tắt prompt/công việc thực tế: khi khởi động demo, API crash vì code seed đã bị lệch khỏi README, tiếp tục tạo `customer.a/customer.b` và đụng unique email của hồ sơ hiện hữu. Chủ dự án đồng thời chốt ba định danh của Customer demo phải giống nhau. AI đối chiếu database, Identity, account và transaction relation rồi sửa seed theo hướng migration tại chỗ.
+- File/module bị tác động: `DatabaseInitializer`; giá trị mặc định của Transfer và Teller deposit; fixture account trong integration test; README, Database Design, Project Blueprint và báo cáo này.
+- Kiểm chứng đã thực hiện: build toàn solution thành công với 0 warning, 0 error; không chạy test theo quyết định hiện tại của chủ dự án. API khởi động qua seed cũ thành công; `/health`, Swagger và Client trả HTTP 200; đăng nhập `0900000001` trả HTTP 200; API account trả tài khoản chính `0900000001` và tài khoản phụ `1000000003`.
+- Kết quả: Customer A dùng `0900000001` và Customer B dùng `0900000002` đồng thời cho phone, username và primary account. Seed đổi username/tài khoản cũ tại chỗ, giữ `UserId`, `BankAccount.Id`, balance và foreign key transaction; account phụ chỉ được thêm khi còn thiếu. User legacy mồ côi do lần seed lỗi được vô hiệu hóa.
+- Vấn đề còn lại: thay đổi đang nằm trên working tree của `develop` vì môi trường trước đó từ chối quyền tạo branch; cần chuyển sang branch sửa lỗi trước khi commit. Stash AI vẫn được giữ nguyên và không tham gia thay đổi này.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: tài liệu seed và code seed phải được kiểm tra cùng nhau sau khi merge các feature phụ thuộc; đổi số tài khoản bằng cách cập nhật bản ghi hiện hữu sẽ giữ toàn bộ lịch sử vì transaction tham chiếu khóa nội bộ thay vì chuỗi account number.
+
+## Entry 026 - Bổ sung tài khoản phụ và ưu tiên thao tác QR
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: thêm hai tài khoản phụ mới cho mỗi Customer demo và chuyển QR đứng ngay sau Chuyển tiền.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu mỗi Customer có thêm hai account number khác rõ ràng với số điện thoại, đồng thời đưa QR lên trước Sao kê ở menu và dashboard. AI giữ constraint account number 10 chữ số nên dùng các số dạng `1234567890`, không đổi schema.
+- File/module bị tác động: Development seed; `NavMenu.razor`; dashboard `Accounts.razor`; README, Database Design và báo cáo này.
+- Kiểm chứng đã thực hiện: build toàn solution thành công với 0 warning, 0 error; không chạy test theo quyết định hiện tại của chủ dự án. API và Client được restart; đăng nhập cả hai Customer và gọi account API xác nhận mỗi người có đúng bốn tài khoản.
+- Kết quả: Customer `0900000001` có `0900000001`, `1000000003`, `1234567890`, `1234567891`; Customer `0900000002` có `0900000002`, `1000000004`, `2234567890`, `2234567891`. Menu và dashboard đều có thứ tự `Chuyển tiền → QR → Sao kê`.
+- Vấn đề còn lại: các thay đổi vẫn chưa commit và đang nằm trên working tree của `develop`; stash AI tiếp tục được giữ nguyên.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: khi thêm dữ liệu demo nên tuân theo constraint hiện có và dùng seed idempotent để lần chạy sau không tạo trùng hoặc đặt lại số dư.
+
+## Entry 027 - Sửa dropdown chọn tài khoản khi có nhiều account
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa danh sách chọn tài khoản trên dashboard Customer sau khi mỗi Customer có bốn tài khoản.
+- Tóm tắt prompt/công việc thực tế: chủ dự án báo nút thả tài khoản bị lỗi. AI kiểm tra markup và CSS, xác định menu tuyệt đối đang nằm trong `.bank-card` có `overflow: hidden`, khiến danh sách dài bị cắt và vùng cuộn quá thấp.
+- File/module bị tác động: `Accounts.razor`, global CSS và báo cáo này.
+- Kiểm chứng đã thực hiện: build Client thành công với 0 warning, 0 error; restart Development Client và kiểm tra host trả HTTP 200. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: nút mũi tên vẫn ở góc dưới phải của thẻ; khi mở, danh sách được render theo normal flow ngay dưới thẻ, không bị clipping, không che khu thao tác và có giới hạn chiều cao responsive để cuộn trên màn hình thấp. ARIA listbox không đầy đủ được thay bằng nhóm button có trạng thái nhấn phù hợp.
+- Vấn đề còn lại: cần chủ dự án review trực quan trên kích thước màn hình đang dùng; thay đổi chưa commit.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: popover không nên nằm trong ancestor có `overflow: hidden` trừ khi dùng portal; với danh sách dài và Blazor thuần, normal flow là giải pháp đơn giản, ổn định và responsive hơn.
+
+## Entry 028 - Gỡ bỏ quy trình đổi địa chỉ
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: loại bỏ toàn bộ vertical slice đổi địa chỉ khỏi phạm vi hiện hành của SUBank V2.4.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu bỏ toàn bộ những thứ liên quan đến chức năng đổi địa chỉ. AI đã rà soát Domain, Contracts, Application, Infrastructure, API, Blazor UI, integration test và tài liệu; xóa code chạy, route, menu, trang giao diện và test của feature. Migration đã áp dụng và Audit Log cũ được giữ làm lịch sử; một migration bù được tạo để xóa bảng khỏi schema hiện tại mà không sửa lịch sử migration.
+- File/module bị tác động: entity/enum/contract/interface/service/configuration/controller/page của address workflow; `SUBankDbContext`, dependency injection, `ApiSession`, menu, dashboard, hồ sơ, CSS, integration test; README, Architecture, Security Design, Project Blueprint, Database Design và báo cáo này.
+- Kiểm chứng đã thực hiện: `dotnet build SUBank.sln --no-restore` thành công với 0 warning, 0 error; API khởi động và áp dụng migration xóa bảng; `/health`, Swagger và Client trả HTTP 200; hai route đổi địa chỉ cũ trả HTTP 404. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: code hiện hành không còn endpoint Customer/Admin, UI hay dependency cho quy trình đổi địa chỉ. `CustomerProfile.PermanentAddress` và `TemporaryAddress` vẫn được giữ vì là dữ liệu hồ sơ chỉ đọc, không phải chức năng thay đổi địa chỉ.
+- Vấn đề còn lại: các migration cũ và entry AI lịch sử vẫn nhắc đến feature để bảo toàn lịch sử kỹ thuật và tính trung thực của báo cáo; chúng không làm feature hoạt động trở lại.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: không xóa hoặc sửa migration đã có thể được áp dụng ở database; khi thu hồi một feature có schema, cần xóa model hiện hành rồi tạo migration bù để mọi database cũ và database tạo mới đều hội tụ về cùng schema cuối.
+
+## Entry 029 - Sửa lỗi Client không gọi được API khi chạy demo
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: chẩn đoán lỗi `TypeError: Failed to fetch` trên màn hình đăng nhập Development.
+- Tóm tắt prompt/công việc thực tế: chủ dự án báo Client không fetch được dữ liệu. AI kiểm tra port, cấu hình `ApiBaseUrl`, CORS và launch profile; xác định lần chạy demo trước đã dùng profile HTTP mặc định trong khi Client và CORS được cấu hình cho HTTPS. AI dừng hai host HTTP và khởi động lại API/Client bằng launch profile `https` như README quy định.
+- File/module bị tác động: không thay đổi business code; chỉ cập nhật báo cáo này. Runtime API và Client được khởi động lại.
+- Kiểm chứng đã thực hiện: API `https://localhost:7247/health` trả HTTP 200; Client `https://localhost:7081` trả HTTP 200; preflight đăng nhập trả HTTP 204 cùng `Access-Control-Allow-Origin: https://localhost:7081` và `Access-Control-Allow-Credentials: true`. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: Client và API dùng đúng cặp origin Development; lỗi fetch do API HTTPS không chạy đã được xử lý.
+- Vấn đề còn lại: tab đang mở tại URL HTTP hoặc giữ asset cũ cần được đóng hoặc hard refresh trước khi dùng URL HTTPS.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: khi Client có `ApiBaseUrl` HTTPS và CORS khóa theo origin, cả hai host phải chạy đúng launch profile; HTTP 200 ở port khác không chứng minh browser có thể gọi API được cấu hình.
+
+## Entry 030 - Khôi phục Redis cho kiểm soát phiên Development
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: xử lý thông báo `Dịch vụ kiểm soát phiên tạm thời không khả dụng` khi đăng nhập.
+- Tóm tắt prompt/công việc thực tế: AI kiểm tra port `6379`, Docker engine, container và vị trí phát sinh lỗi trong `RedisActiveSessionStore`; xác định Docker Desktop đang tắt và container `subank-redis` đã dừng. AI khởi động Docker Desktop rồi khởi động lại đúng container hiện có, không thay Redis bằng bộ nhớ tạm và không bỏ fail-closed session control.
+- File/module bị tác động: không thay đổi business code; chỉ cập nhật báo cáo này. Trạng thái runtime của Docker Desktop và container `subank-redis` được khôi phục.
+- Kiểm chứng đã thực hiện: `redis-cli ping` trả `PONG`; TCP `localhost:6379` mở; API thực hiện thành công luồng login và ghi nhận session sau khi Redis trở lại. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: đăng nhập Development hoạt động lại với Redis thật. Container vẫn có restart policy `no` vì đề nghị đổi sang `unless-stopped` không được cấp quyền; khi Docker Desktop bị tắt, cần mở Docker và chạy lại container.
+- Vấn đề còn lại: Docker Desktop không phải thành phần được host bởi solution; người demo phải giữ Docker Desktop và `subank-redis` ở trạng thái running.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: lỗi dependency phải được xác minh từ port và service thật trước khi sửa code; với kiểm soát phiên bảo mật, fail-closed khi Redis mất kết nối an toàn hơn âm thầm chuyển sang memory store và làm sai cam kết một active session.
+
+## Entry 031 - Ngăn ForceLogout của phiên cũ kết thúc nhầm phiên mới
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa thông báo phiên bị thay thế xuất hiện ngay sau khi người dùng vừa đăng nhập lại thành công.
+- Tóm tắt prompt/công việc thực tế: sau khi Redis được khôi phục, chủ dự án thấy thông báo tài khoản đăng nhập ở nơi khác dù mới nhập thông tin đăng nhập. AI đối chiếu log và luồng `ReplaceAsync`/SignalR, xác định phiên kiểm tra trước đó đã bị thay thế và `RealtimeService` vẫn giữ thông báo/kết nối cũ. Client được sửa để dừng hub cũ trước login, tuần tự hóa thao tác đồng bộ, gắn mỗi hub với access token lúc tạo và bỏ qua `ForceLogout` đến trễ nếu token đó không còn là phiên hiện tại.
+- File/module bị tác động: `RealtimeService.cs`, `Login.razor` và báo cáo này.
+- Kiểm chứng đã thực hiện: build riêng Client thành công với 0 warning, 0 error; Client HTTPS được restart. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: login mới xóa thông báo cũ và tạo kết nối realtime mới; event của kết nối cũ không thể gọi `EndFromServer` lên phiên mới.
+- Vấn đề còn lại: chưa thực hiện kiểm thử tự động hai browser context theo yêu cầu hoãn test; cần bổ sung khi bước vào giai đoạn kiểm thử cuối dự án.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: sự kiện realtime bất đồng bộ phải mang hoặc capture định danh phiên và kiểm tra lại trước khi thay đổi authentication state; chỉ biết user ID là không đủ khi nhiều phiên nối tiếp nhau trên cùng một SPA.
+
+## Entry 032 - Chặn Unauthorized khi reload Client
+
+- Ngày: 2026-08-28
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa race condition khôi phục phiên khiến trang Customer hiện `Unauthorized` và nút `Thử lại` sau khi reload.
+- Tóm tắt prompt/công việc thực tế: chủ dự án báo reload trang đã đăng nhập làm lộ lỗi `Unauthorized · Thử lại`. AI kiểm tra `App.razor`, `ApiSession` và lifecycle của trang Accounts; xác định Router dựng trang nghiệp vụ và gọi API trước khi `/api/auth/refresh` hoàn tất. App được thêm bootstrap gate để chờ restore, route bảo vệ chuyển về login nếu không có phiên, và API `401` giữa phiên được xử lý tập trung thay vì hiển thị như lỗi tải dữ liệu thông thường.
+- File/module bị tác động: `App.razor`, `ApiSession.cs`, component `RedirectToLogin.razor`, global CSS và báo cáo này.
+- Kiểm chứng đã thực hiện: build Client thành công với 0 warning, 0 error; Client và API HTTPS được restart, cả hai host trả HTTP 200. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: trong lúc reload, UI hiển thị `Đang khôi phục phiên...` và chưa khởi tạo trang nghiệp vụ. Refresh thành công mới render route; refresh thất bại hoặc API trả `401` sẽ chuyển về login, còn nút `Thử lại` chỉ phục vụ lỗi tải dữ liệu không phải lỗi authentication.
+- Vấn đề còn lại: chưa chạy browser automation cho reload do chủ dự án hoãn test đến giai đoạn cuối; cần xác nhận trực quan bằng hard refresh trên browser đang giữ refresh cookie.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: ứng dụng SPA dùng access token trong memory phải có authentication bootstrap gate; việc API bảo vệ đúng bằng `401` không đủ nếu UI vẫn cho component nghiệp vụ chạy trước khi trạng thái phiên được khôi phục.
 
 ## Mẫu ghi nhận cho các entry tiếp theo
 

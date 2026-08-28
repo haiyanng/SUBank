@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SUBank.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using SUBank.Infrastructure.Persistence;
 namespace SUBank.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SUBankDbContext))]
-    partial class SUBankDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260828023954_RemoveAddressChangeWorkflow")]
+    partial class RemoveAddressChangeWorkflow
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -295,7 +298,7 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
-                    b.Property<string>("IdentityCardNumber")
+                    b.Property<string>("IdentityNumber")
                         .IsRequired()
                         .HasMaxLength(20)
                         .IsUnicode(false)
@@ -328,7 +331,7 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("IdentityCardNumber")
+                    b.HasIndex("IdentityNumber")
                         .IsUnique();
 
                     b.HasIndex("Phone")

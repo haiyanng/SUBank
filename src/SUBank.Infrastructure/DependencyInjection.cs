@@ -9,7 +9,6 @@ using SUBank.Infrastructure.Authentication;
 using SUBank.Infrastructure.Banking;
 using SUBank.Infrastructure.Sessions;
 using StackExchange.Redis;
-using SUBank.Infrastructure.AddressChanges;
 using SUBank.Infrastructure.Statements;
 using SUBank.Infrastructure.Qr;
 using SUBank.Infrastructure.Profiles;
@@ -51,7 +50,6 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IBankingService, BankingService>();
         services.AddScoped<IStaffService, StaffService>();
-        services.AddScoped<IAddressChangeService, AddressChangeService>();
         services.AddScoped<IStatementService, StatementService>();
         services.AddSingleton<IStatementPdfGenerator, QuestStatementPdfGenerator>();
         services.AddScoped<IQrService, QrService>();

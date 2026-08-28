@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SUBank.Contracts.Auth;
-using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Statements;
 using SUBank.Contracts.Qr;
@@ -23,8 +22,8 @@ namespace SUBank.IntegrationTests;
 
 public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
 {
-    private const string AccountA = "1000000001";
-    private const string AccountB = "1000000002";
+    private const string AccountA = "0900000001";
+    private const string AccountB = "0900000002";
     private readonly SUBankWebApplicationFactory factory;
 
     public ApiSmokeTests(SUBankWebApplicationFactory factory) => this.factory = factory;
@@ -45,10 +44,10 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
             HandleCookies = true,
             BaseAddress = new Uri("https://localhost")
         });
-        var login = await LoginAsync(client, "customer.a");
+        var login = await LoginAsync(client, "0900000001");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
         var me = await client.GetFromJsonAsync<UserSummary>("/api/auth/me");
-        Assert.Equal("customer.a", me!.UserName);
+        Assert.Equal("0900000001", me!.UserName);
         Assert.Contains("Customer", me.Roles);
 
         client.DefaultRequestHeaders.Authorization = null;
@@ -63,9 +62,9 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     public async Task Auth_SecondLoginInvalidatesFirstAccessToken()
     {
         var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
-        using var first = await CreateAuthorizedClientAsync("customer.a");
+        using var first = await CreateAuthorizedClientAsync("0900000001");
         notifier.Clear();
-        using var second = await CreateAuthorizedClientAsync("customer.a");
+        using var second = await CreateAuthorizedClientAsync("0900000001");
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await first.GetAsync("/api/auth/me")).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await second.GetAsync("/api/auth/me")).StatusCode);
@@ -76,7 +75,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     public async Task Realtime_SecondLoginSendsForceLogoutToOldSession()
     {
         using var firstClient = factory.CreateClient();
-        var firstSession = await LoginAsync(firstClient, "customer.a");
+        var firstSession = await LoginAsync(firstClient, "0900000001");
         firstClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", firstSession.AccessToken);
         var forced = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var hub = new HubConnectionBuilder()
@@ -91,7 +90,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         await hub.StartAsync();
 
         using var secondClient = factory.CreateClient();
-        await LoginAsync(secondClient, "customer.a");
+        await LoginAsync(secondClient, "0900000001");
 
         await forced.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(HttpStatusCode.Unauthorized, (await firstClient.GetAsync("/api/auth/me")).StatusCode);
@@ -100,7 +99,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     [Fact]
     public async Task Auth_ThirdInvalidPasswordLocksUser_AndAdminCanUnlock()
     {
-        const string userName = "customer.b";
+        const string userName = "0900000002";
         await EnsureUnlockedAsync(userName);
         using var anonymous = factory.CreateClient();
         try
@@ -126,7 +125,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     {
         using var anonymous = factory.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/accounts")).StatusCode);
-        using var customer = await CreateAuthorizedClientAsync("customer.a");
+        using var customer = await CreateAuthorizedClientAsync("0900000001");
         Assert.Equal(HttpStatusCode.Forbidden, (await customer.GetAsync("/api/admin/locked-users")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await customer.PostAsJsonAsync("/api/teller/cash-deposits", new CashDepositRequest(AccountA, 1m, null))).StatusCode);
@@ -145,7 +144,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         {
             var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
             notifier.Clear();
-            using var customer = await CreateAuthorizedClientAsync("customer.a");
+            using var customer = await CreateAuthorizedClientAsync("0900000001");
             var request = new TransferRequest(AccountA, AccountB, 12_345.67m, "Integration transfer", "123456");
             using var first = await PostWithIdempotencyAsync(customer, "/api/transfers", key, request);
             using var replay = await PostWithIdempotencyAsync(customer, "/api/transfers", key, request);
@@ -178,7 +177,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         var before = await GetBalancesAsync();
         try
         {
-            using var customer = await CreateAuthorizedClientAsync("customer.a");
+            using var customer = await CreateAuthorizedClientAsync("0900000001");
             using var response = await PostWithIdempotencyAsync(customer, "/api/transfers", key,
                 new TransferRequest(AccountA, AccountB, before[AccountA] + 1m, "Insufficient", "123456"));
             Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -196,7 +195,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         var amount = decimal.Round(before[AccountA] * 0.75m, 2);
         try
         {
-            using var firstClient = await CreateAuthorizedClientAsync("customer.a");
+            using var firstClient = await CreateAuthorizedClientAsync("0900000001");
             var request = new TransferRequest(AccountA, AccountB, amount, "Concurrent transfer", "123456");
             var responses = await Task.WhenAll(
                 PostWithIdempotencyAsync(firstClient, "/api/transfers", $"{prefix}-1", request),
@@ -250,72 +249,13 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     }
 
     [Fact]
-    public async Task AddressChange_CustomerCreatesAndAdminApprovesOrRejects()
-    {
-        var suffix = Guid.NewGuid().ToString("N")[..8];
-        var approvedAddress = $"Integration approved {suffix}";
-        var rejectedAddress = $"Integration rejected {suffix}";
-        var original = await GetCustomerAddressesAsync("customer.a");
-        var requestNumbers = new List<string>();
-        try
-        {
-            using var customer = await CreateAuthorizedClientAsync("customer.a");
-            Assert.Equal(HttpStatusCode.UnprocessableEntity,
-                (await customer.PostAsJsonAsync("/api/address-change-requests", new CreateAddressChangeRequest(" ", null))).StatusCode);
-            var createdResponse = await customer.PostAsJsonAsync("/api/address-change-requests",
-                new CreateAddressChangeRequest(approvedAddress, "Temporary integration"));
-            Assert.Equal(HttpStatusCode.OK, createdResponse.StatusCode);
-            var created = (await createdResponse.Content.ReadFromJsonAsync<AddressChangeRequestSummary>())!;
-            requestNumbers.Add(created.RequestNo);
-            Assert.Equal(HttpStatusCode.Conflict,
-                (await customer.PostAsJsonAsync("/api/address-change-requests",
-                    new CreateAddressChangeRequest("Another address", null))).StatusCode);
-
-            using var teller = await CreateAuthorizedClientAsync("teller");
-            Assert.Equal(HttpStatusCode.Forbidden,
-                (await teller.GetAsync("/api/admin/address-change-requests/pending")).StatusCode);
-            using var admin = await CreateAuthorizedClientAsync("admin");
-            var pending = await admin.GetFromJsonAsync<List<AddressChangeRequestSummary>>(
-                "/api/admin/address-change-requests/pending");
-            Assert.Contains(pending!, x => x.RequestNo == created.RequestNo);
-            Assert.Equal(HttpStatusCode.NoContent,
-                (await admin.PostAsync($"/api/admin/address-change-requests/{created.RequestNo}/approve", null)).StatusCode);
-            Assert.Equal((approvedAddress, "Temporary integration"), await GetCustomerAddressesAsync("customer.a"));
-            Assert.Equal(HttpStatusCode.Conflict,
-                (await admin.PostAsync($"/api/admin/address-change-requests/{created.RequestNo}/approve", null)).StatusCode);
-
-            customer.DefaultRequestHeaders.Authorization = null;
-            var customerSession = await LoginAsync(customer, "customer.a");
-            customer.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", customerSession.AccessToken);
-            var rejectedResponse = await customer.PostAsJsonAsync("/api/address-change-requests",
-                new CreateAddressChangeRequest(rejectedAddress, null));
-            rejectedResponse.EnsureSuccessStatusCode();
-            var rejected = (await rejectedResponse.Content.ReadFromJsonAsync<AddressChangeRequestSummary>())!;
-            requestNumbers.Add(rejected.RequestNo);
-            admin.DefaultRequestHeaders.Authorization = null;
-            var adminSession = await LoginAsync(admin, "admin");
-            admin.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminSession.AccessToken);
-            Assert.Equal(HttpStatusCode.NoContent,
-                (await admin.PostAsJsonAsync($"/api/admin/address-change-requests/{rejected.RequestNo}/reject",
-                    new RejectAddressChangeRequest("Thiếu giấy tờ xác minh"))).StatusCode);
-            Assert.Equal((approvedAddress, "Temporary integration"), await GetCustomerAddressesAsync("customer.a"));
-            var history = await customer.GetFromJsonAsync<List<AddressChangeRequestSummary>>("/api/address-change-requests");
-            Assert.Contains(history!, x => x.RequestNo == rejected.RequestNo && x.Status == "Rejected");
-        }
-        finally
-        {
-            await CleanupAddressChangesAsync(requestNumbers, original);
-        }
-    }
-
-    [Fact]
     public async Task Statement_ReturnsAuthorizedReadModelAndPdf()
     {
         var key = $"test-statement-{Guid.NewGuid():N}";
         var before = await GetBalancesAsync();
         try
         {
-            using var customer = await CreateAuthorizedClientAsync("customer.a");
+            using var customer = await CreateAuthorizedClientAsync("0900000001");
             using var transfer = await PostWithIdempotencyAsync(customer, "/api/transfers", key,
                 new TransferRequest(AccountA, AccountB, 1_234.56m, "Statement test", "123456"));
             transfer.EnsureSuccessStatusCode();
@@ -345,7 +285,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     [Fact]
     public async Task Qr_GeneratesOwnedAccountAndDecodesItsImage()
     {
-        using var customer = await CreateAuthorizedClientAsync("customer.a");
+        using var customer = await CreateAuthorizedClientAsync("0900000001");
         using var generatedResponse = await customer.PostAsJsonAsync("/api/qr/generate",
             new GenerateQrRequest(AccountA, 250_000.50m, "QR integration"));
         generatedResponse.EnsureSuccessStatusCode();
@@ -403,31 +343,6 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         var db = scope.ServiceProvider.GetRequiredService<SUBankDbContext>();
         return await db.BankAccounts.AsNoTracking().Where(x => x.AccountNumber == AccountA || x.AccountNumber == AccountB)
             .ToDictionaryAsync(x => x.AccountNumber, x => x.Balance);
-    }
-
-    private async Task<(string Permanent, string? Temporary)> GetCustomerAddressesAsync(string userName)
-    {
-        using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SUBankDbContext>();
-        var profile = await db.CustomerProfiles.AsNoTracking().SingleAsync(x => x.UserId == db.Users
-            .Where(u => u.UserName == userName).Select(u => u.Id).Single());
-        return (profile.PermanentAddress, profile.TemporaryAddress);
-    }
-
-    private async Task CleanupAddressChangesAsync(
-        IReadOnlyCollection<string> requestNumbers, (string Permanent, string? Temporary) original)
-    {
-        using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SUBankDbContext>();
-        if (requestNumbers.Count > 0)
-        {
-            await db.AuditLogs.Where(x => x.EntityId != null && requestNumbers.Contains(x.EntityId)).ExecuteDeleteAsync();
-            await db.AddressChangeRequests.Where(x => requestNumbers.Contains(x.RequestNo)).ExecuteDeleteAsync();
-        }
-        var userId = await db.Users.Where(x => x.UserName == "customer.a").Select(x => x.Id).SingleAsync();
-        await db.CustomerProfiles.Where(x => x.UserId == userId).ExecuteUpdateAsync(setters => setters
-            .SetProperty(x => x.PermanentAddress, original.Permanent)
-            .SetProperty(x => x.TemporaryAddress, original.Temporary));
     }
 
     private async Task<bool> TransactionExistsAsync(string key)

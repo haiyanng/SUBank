@@ -1,8 +1,10 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
+using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using SUBank.Contracts.Accounts;
-using SUBank.Contracts.AddressChanges;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Statements;
@@ -13,7 +15,7 @@ using SUBank.Contracts.Transfers;
 
 namespace SUBank.Client.Services;
 
-public sealed class ApiSession(HttpClient httpClient)
+public sealed class ApiSession(HttpClient httpClient, NavigationManager navigation)
 {
     public AuthResponse? Current { get; private set; }
     public event Action? Changed;
@@ -37,7 +39,7 @@ public sealed class ApiSession(HttpClient httpClient)
         { Content = JsonContent.Create(new LoginRequest(userName, password)) };
         request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
         using var response = await httpClient.SendAsync(request);
-        await EnsureSuccessAsync(response);
+        await EnsureSuccessAsync(response, redirectOnUnauthorized: false);
         Current = await response.Content.ReadFromJsonAsync<AuthResponse>();
         Changed?.Invoke();
     }
@@ -115,34 +117,6 @@ public sealed class ApiSession(HttpClient httpClient)
 
     public Task<List<LockedUserSummary>?> GetLockedUsersAsync() => GetAsync<List<LockedUserSummary>>("api/admin/locked-users");
     public Task<List<AuditLogSummary>?> GetAuditLogsAsync() => GetAsync<List<AuditLogSummary>>("api/admin/audit-logs");
-    public Task<List<AddressChangeRequestSummary>?> GetAddressChangesAsync() =>
-        GetAsync<List<AddressChangeRequestSummary>>("api/address-change-requests");
-    public Task<List<AddressChangeRequestSummary>?> GetPendingAddressChangesAsync() =>
-        GetAsync<List<AddressChangeRequestSummary>>("api/admin/address-change-requests/pending");
-
-    public async Task CreateAddressChangeAsync(CreateAddressChangeRequest model)
-    {
-        using var request = Authorized(HttpMethod.Post, "api/address-change-requests", JsonContent.Create(model));
-        using var response = await httpClient.SendAsync(request);
-        await EnsureSuccessAsync(response);
-    }
-
-    public async Task ApproveAddressChangeAsync(string requestNo)
-    {
-        using var request = Authorized(HttpMethod.Post,
-            $"api/admin/address-change-requests/{Uri.EscapeDataString(requestNo)}/approve");
-        using var response = await httpClient.SendAsync(request);
-        await EnsureSuccessAsync(response);
-    }
-
-    public async Task RejectAddressChangeAsync(string requestNo, string reason)
-    {
-        using var request = Authorized(HttpMethod.Post,
-            $"api/admin/address-change-requests/{Uri.EscapeDataString(requestNo)}/reject",
-            JsonContent.Create(new RejectAddressChangeRequest(reason)));
-        using var response = await httpClient.SendAsync(request);
-        await EnsureSuccessAsync(response);
-    }
 
     public async Task UnlockAsync(string userName)
     {
@@ -166,10 +140,28 @@ public sealed class ApiSession(HttpClient httpClient)
         return request;
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response)
+    private async Task EnsureSuccessAsync(HttpResponseMessage response, bool redirectOnUnauthorized = true)
     {
         if (response.IsSuccessStatusCode) return;
-        var problem = await response.Content.ReadFromJsonAsync<ApiProblem>();
+
+        if (redirectOnUnauthorized && response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            Current = null;
+            Changed?.Invoke();
+            navigation.NavigateTo("/login?reason=session-expired", replace: true);
+            throw new InvalidOperationException("Phiên đăng nhập đã hết hạn hoặc không còn hiệu lực.");
+        }
+
+        ApiProblem? problem = null;
+        try
+        {
+            problem = await response.Content.ReadFromJsonAsync<ApiProblem>();
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException)
+        {
+            // Một số phản hồi 4xx không có JSON body. Dùng thông báo dự phòng an toàn bên dưới.
+        }
+
         throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"API trả về lỗi {(int)response.StatusCode}.");
     }
 

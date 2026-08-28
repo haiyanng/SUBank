@@ -45,7 +45,7 @@ Seed phải tạo bốn user riêng biệt bằng ASP.NET Core Identity:
 | `0900000001` | Customer | Chuyển tiền, xem account/history, tạo QR |
 | `0900000002` | Customer | Nhận tiền, quét QR và kiểm chứng realtime |
 | `teller` | Teller | Thực hiện Cash Deposit |
-| `admin` | Admin | Mở khóa user, xử lý Address Request và xem Audit Log |
+| `admin` | Admin | Mở khóa user và xem Audit Log |
 
 Teller và Admin là hai user riêng, không gán đồng thời hai role này cho một demo user. Password và transaction password Development phải là dữ liệu demo rõ ràng, không tái sử dụng secret thật và được tài liệu hóa an toàn trong README dành cho Development.
 
@@ -55,7 +55,6 @@ Teller và Admin là hai user riêng, không gán đồng thời hai role này c
 - SignalR `ForceLogout` và thông báo số dư/giao dịch sau khi database commit.
 - Tạo SUBank QR, quét bằng camera, đọc QR từ ảnh upload và điền trước thông tin transfer.
 - Sao kê tháng/năm và xuất PDF ở mức tối thiểu.
-- Address-change request và luồng Admin approve/reject.
 - Trợ lý tài chính OpenAI chỉ đọc, sử dụng backend tool xác định và có fallback an toàn.
 
 ### P2 - cắt trước nếu có nguy cơ trễ
@@ -83,7 +82,7 @@ Controller chỉ xử lý vấn đề vận chuyển dữ liệu HTTP. Controlle
 Teller và Admin có thể dùng chung Staff Portal/layout để giảm UI trùng lặp, nhưng authorization vẫn tách biệt:
 
 - Cash Deposit yêu cầu role Teller.
-- Unlock User, Address Request approve/reject và Audit Logs yêu cầu role Admin.
+- Unlock User và Audit Logs yêu cầu role Admin.
 - Teller truy cập Admin endpoint phải nhận `403`.
 - Admin truy cập Teller Cash Deposit endpoint phải nhận `403`.
 - Navigation ẩn theo role chỉ phục vụ UX và không thay thế API policy.
@@ -152,14 +151,13 @@ Quy ước theo entity:
 | `CustomerProfile` | `long Id` | Không cần public identifier; dùng `/api/profile` |
 | `BankAccount` | `long Id` | `AccountNumber` dạng string và unique |
 | `FinancialTransaction` | `long Id` | `ReferenceNo` do server tạo và unique |
-| `AddressChangeRequest` | `long Id` | `RequestNo` do server tạo và unique |
 | `Beneficiary` | `long Id` | Có thể dùng `Id` trong endpoint nhưng bắt buộc kiểm tra ownership |
 | `RefreshToken` | `long Id` | Không expose |
 | `UserSession` | `long Id` | Không expose |
 | `AuditLog` | `long Id` | Chỉ phục vụ authorized Admin query; không cần public GUID |
 | `AiQueryLog` | `long Id` | Không expose |
 
-Account number được lưu dạng chuỗi với constraint rõ ràng về độ dài/format, không coi là kiểu số. `ReferenceNo` và `RequestNo` là business reference để hiển thị, tìm kiếm và đối chiếu khi demo.
+Account number được lưu dạng chuỗi với constraint rõ ràng về độ dài/format, không coi là kiểu số. `ReferenceNo` là business reference để hiển thị, tìm kiếm và đối chiếu khi demo.
 
 Identifier khó đoán không thay thế authorization. Mọi resource endpoint vẫn phải kiểm tra ownership hoặc role. Nếu Customer đổi account number, reference number hoặc beneficiary ID trong URL/DTO, backend không được trả dữ liệu của Customer khác.
 
@@ -171,7 +169,7 @@ Không tạo entity hoặc bảng `CustomerContact`. `CustomerProfile` là ngu�
 
 - `FullName`
 - `DateOfBirth`
-- `IdentityNumber` là dữ liệu demo tổng hợp
+- `IdentityCardNumber` là số CCCD/CMND demo tổng hợp
 - `Phone`
 - `Email`
 - `PermanentAddress`
@@ -226,8 +224,8 @@ SUBank V2.4 tự thiết kế và triển khai **SUBank QR nội bộ**. Hệ th
 Payload phiên bản đầu tiên:
 
 ```text
-QR tĩnh: subank://transfer?v=1&account=1000000001
-QR động: subank://transfer?v=1&account=1000000001&amount=500000&message=TienAn
+QR tĩnh: subank://transfer?v=1&account=0900000001
+QR động: subank://transfer?v=1&account=0900000001&amount=500000&message=TienAn
 ```
 
 Payload chỉ chứa dữ liệu hỗ trợ nhập transfer gồm version, account number, amount tùy chọn và message tùy chọn. Không đưa CustomerId, internal database ID, balance, password, transaction password, token, session ID hoặc recipient name có thẩm quyền vào QR.
@@ -305,7 +303,7 @@ Các bằng chứng UAT `Actual Result`, screenshot, Figma approval, deployment 
 3. Account đúng quyền, transaction history/detail, dashboard, ownership tests và responsive shell.
 4. Transaction password, idempotent atomic transfer, concurrency, audit, confirmation/result UI và transfer tests.
 5. Teller deposit, Admin unlock, Redis session enforcement và SignalR `ForceLogout` nếu P0 vẫn ổn định.
-6. QR generate/upload/camera, statement PDF, address flow và constrained AI theo đúng thứ tự ưu tiên.
+6. QR generate/upload/camera, statement PDF và constrained AI theo đúng thứ tự ưu tiên.
 7. Docker same-origin deployment, Azure SQL, Upstash Redis, smoke test, responsive QA, sửa lỗi nghiêm trọng và hoàn thiện tài liệu nộp. Không bắt đầu tính năng mới trong ngày cuối.
 
 ## Mục tiêu triển khai demo

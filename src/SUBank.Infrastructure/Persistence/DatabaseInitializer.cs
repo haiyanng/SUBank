@@ -18,19 +18,59 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
         foreach (var role in new[] { "Customer", "Teller", "Admin" })
             if (!await roleManager.RoleExistsAsync(role)) EnsureSucceeded(await roleManager.CreateAsync(new IdentityRole(role)));
 
-        var customerA = await EnsureUserAsync("customer.a", "Customer", true);
-        var customerB = await EnsureUserAsync("customer.b", "Customer", true);
+        var customerA = await EnsureUserAsync("0900000001", "Customer", true, "customer.a", cancellationToken);
+        var customerB = await EnsureUserAsync("0900000002", "Customer", true, "customer.b", cancellationToken);
         await EnsureUserAsync("teller", "Teller", false);
         await EnsureUserAsync("admin", "Admin", false);
-        await EnsureCustomerAsync(customerA, "Nguyễn An", new DateOnly(1998, 5, 10), "001098000001",
-            "0900000001", "customer.a@subank.demo", "Hà Nội", "1000000001", 100_000_000m, cancellationToken);
-        await EnsureCustomerAsync(customerB, "Trần Bình", new DateOnly(1999, 8, 15), "001099000002",
-            "0900000002", "customer.b@subank.demo", "TP. Hồ Chí Minh", "1000000002", 50_000_000m, cancellationToken);
+        var customerAProfile = await EnsureCustomerAsync(customerA, "Nguyễn An", new DateOnly(1998, 5, 10), "001098000001",
+            "0900000001", "customer.a@subank.demo", "Hà Nội", "0900000001", "1000000001", 100_000_000m, cancellationToken);
+        var customerBProfile = await EnsureCustomerAsync(customerB, "Trần Bình", new DateOnly(1999, 8, 15), "001099000002",
+            "0900000002", "customer.b@subank.demo", "TP. Hồ Chí Minh", "0900000002", "1000000002", 50_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerAProfile, "1000000003", 20_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerAProfile, "1234567890", 15_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerAProfile, "1234567891", 5_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerBProfile, "1000000004", 10_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerBProfile, "2234567890", 15_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerBProfile, "2234567891", 5_000_000m, cancellationToken);
     }
 
-    private async Task<ApplicationUser> EnsureUserAsync(string userName, string role, bool transactionPassword)
+    private async Task<ApplicationUser> EnsureUserAsync(string userName, string role, bool transactionPassword,
+        string? legacyUserName = null, CancellationToken cancellationToken = default)
     {
         var user = await userManager.FindByNameAsync(userName);
+        var legacyUser = legacyUserName is null ? null : await userManager.FindByNameAsync(legacyUserName);
+
+        if (user is not null && legacyUser is not null && user.Id != legacyUser.Id)
+        {
+            var userHasProfile = await dbContext.CustomerProfiles
+                .AnyAsync(x => x.UserId == user.Id, cancellationToken);
+            var legacyUserHasProfile = await dbContext.CustomerProfiles
+                .AnyAsync(x => x.UserId == legacyUser.Id, cancellationToken);
+
+            if (legacyUserHasProfile && !userHasProfile)
+            {
+                await QuarantineUserAsync(user);
+                EnsureSucceeded(await userManager.SetUserNameAsync(legacyUser, userName));
+                user = legacyUser;
+            }
+            else if (legacyUserHasProfile && userHasProfile)
+            {
+                throw new InvalidOperationException(
+                    $"Không thể hợp nhất hai Customer '{userName}' và '{legacyUserName}' vì cả hai đều có hồ sơ.");
+            }
+            else if (legacyUser.IsActive)
+            {
+                legacyUser.IsActive = false;
+                EnsureSucceeded(await userManager.UpdateAsync(legacyUser));
+            }
+        }
+
+        if (user is null && legacyUser is not null)
+        {
+            EnsureSucceeded(await userManager.SetUserNameAsync(legacyUser, userName));
+            user = legacyUser;
+        }
+
         if (user is null)
         {
             user = new ApplicationUser { UserName = userName, IsActive = true, CreatedAtUtc = DateTimeOffset.UtcNow };
@@ -46,9 +86,10 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
         return user;
     }
 
-    private async Task EnsureCustomerAsync(
-        ApplicationUser user, string fullName, DateOnly dateOfBirth, string identityNumber,
-        string phone, string email, string address, string accountNumber, decimal openingBalance,
+    private async Task<CustomerProfile> EnsureCustomerAsync(
+        ApplicationUser user, string fullName, DateOnly dateOfBirth, string identityCardNumber,
+        string phone, string email, string address, string accountNumber, string legacyAccountNumber,
+        decimal openingBalance,
         CancellationToken cancellationToken)
     {
         var profile = await dbContext.CustomerProfiles.SingleOrDefaultAsync(x => x.UserId == user.Id, cancellationToken);
@@ -56,22 +97,56 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
         {
             profile = new CustomerProfile
             {
-                UserId = user.Id, FullName = fullName, DateOfBirth = dateOfBirth, IdentityNumber = identityNumber,
+                UserId = user.Id, FullName = fullName, DateOfBirth = dateOfBirth, IdentityCardNumber = identityCardNumber,
                 Phone = phone, Email = email, PermanentAddress = address, CreatedAtUtc = DateTimeOffset.UtcNow
             };
             dbContext.CustomerProfiles.Add(profile);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        if (!await dbContext.BankAccounts.AnyAsync(x => x.AccountNumber == accountNumber, cancellationToken))
+        await EnsureAccountAsync(profile, accountNumber, openingBalance, cancellationToken, legacyAccountNumber);
+        return profile;
+    }
+
+    private async Task EnsureAccountAsync(CustomerProfile profile, string accountNumber, decimal openingBalance,
+        CancellationToken cancellationToken, string? legacyAccountNumber = null)
+    {
+        var account = await dbContext.BankAccounts
+            .SingleOrDefaultAsync(x => x.AccountNumber == accountNumber, cancellationToken);
+        if (account is not null)
         {
-            dbContext.BankAccounts.Add(new BankAccount
-            {
-                CustomerProfileId = profile.Id, AccountNumber = accountNumber, Balance = openingBalance,
-                Currency = "VND", Status = AccountStatus.Active, CreatedAtUtc = DateTimeOffset.UtcNow
-            });
-            await dbContext.SaveChangesAsync(cancellationToken);
+            if (account.CustomerProfileId != profile.Id)
+                throw new InvalidOperationException($"Số tài khoản demo '{accountNumber}' đã thuộc Customer khác.");
+            return;
         }
+
+        if (legacyAccountNumber is not null)
+        {
+            account = await dbContext.BankAccounts
+                .SingleOrDefaultAsync(x => x.AccountNumber == legacyAccountNumber, cancellationToken);
+            if (account is not null)
+            {
+                if (account.CustomerProfileId != profile.Id)
+                    throw new InvalidOperationException($"Số tài khoản cũ '{legacyAccountNumber}' đã thuộc Customer khác.");
+                account.AccountNumber = accountNumber;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+        }
+
+        dbContext.BankAccounts.Add(new BankAccount
+        {
+            CustomerProfileId = profile.Id, AccountNumber = accountNumber, Balance = openingBalance,
+            Currency = "VND", Status = AccountStatus.Active, CreatedAtUtc = DateTimeOffset.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task QuarantineUserAsync(ApplicationUser user)
+    {
+        EnsureSucceeded(await userManager.SetUserNameAsync(user, $"disabled-{user.Id}"));
+        user.IsActive = false;
+        EnsureSucceeded(await userManager.UpdateAsync(user));
     }
 
     private static void EnsureSucceeded(IdentityResult result)

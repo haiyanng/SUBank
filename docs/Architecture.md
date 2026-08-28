@@ -69,7 +69,7 @@ teller → Teller
 admin  → Admin
 ```
 
-Teller chỉ nhìn thấy và truy cập dashboard cùng Cash Deposit. Admin chỉ nhìn thấy và truy cập dashboard, Locked Users, Address Requests và Audit Logs. Việc ẩn navigation chỉ phục vụ UX; API policy vẫn bắt buộc kiểm tra role.
+Teller chỉ nhìn thấy và truy cập dashboard cùng Cash Deposit. Admin chỉ nhìn thấy và truy cập dashboard, Locked Users và Audit Logs. Việc ẩn navigation chỉ phục vụ UX; API policy vẫn bắt buộc kiểm tra role.
 
 Một user không được gán đồng thời Teller và Admin trong seed mặc định. Cách tách này giữ nguyên separation of duties: người tạo cash deposit không đồng thời có quyền mở khóa user hoặc xử lý administrative request.
 

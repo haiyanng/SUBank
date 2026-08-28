@@ -6,60 +6,98 @@ namespace SUBank.Client.Services;
 
 public sealed class RealtimeService(ApiSession session, HttpClient httpClient, NavigationManager navigation) : IAsyncDisposable
 {
+    private readonly SemaphoreSlim syncGate = new(1, 1);
     private HubConnection? connection;
+    private string? connectionAccessToken;
     public string? LastMessage { get; private set; }
     public event Action? MessageChanged;
 
     public async Task SyncAsync()
     {
-        if (session.Current is null)
+        await syncGate.WaitAsync();
+        try
         {
-            await StopAsync();
+            await SyncCoreAsync();
+        }
+        finally
+        {
+            syncGate.Release();
+        }
+    }
+
+    public async Task PrepareForLoginAsync()
+    {
+        await syncGate.WaitAsync();
+        try
+        {
+            await StopCoreAsync();
+            ClearMessage();
+        }
+        finally
+        {
+            syncGate.Release();
+        }
+    }
+
+    private async Task SyncCoreAsync()
+    {
+        var currentAccessToken = session.Current?.AccessToken;
+        if (string.IsNullOrWhiteSpace(currentAccessToken))
+        {
+            await StopCoreAsync();
             return;
         }
-        if (connection?.State is HubConnectionState.Connected or HubConnectionState.Connecting) return;
 
-        await StopAsync();
-        connection = new HubConnectionBuilder()
+        if ((connection?.State is HubConnectionState.Connected or HubConnectionState.Connecting) &&
+            string.Equals(connectionAccessToken, currentAccessToken, StringComparison.Ordinal)) return;
+
+        await StopCoreAsync();
+        var boundAccessToken = currentAccessToken;
+        var nextConnection = new HubConnectionBuilder()
             .WithUrl(new Uri(httpClient.BaseAddress!, "hubs/banking"), options =>
-                options.AccessTokenProvider = () => Task.FromResult(session.Current?.AccessToken))
+                options.AccessTokenProvider = () => Task.FromResult<string?>(boundAccessToken))
             .WithAutomaticReconnect()
             .Build();
-        connection.On("ForceLogout", () =>
+        nextConnection.On("ForceLogout", () =>
         {
+            if (!string.Equals(session.Current?.AccessToken, boundAccessToken, StringComparison.Ordinal)) return;
+
             LastMessage = "Tài khoản đã đăng nhập ở nơi khác. Phiên này đã kết thúc.";
             session.EndFromServer();
             MessageChanged?.Invoke();
             navigation.NavigateTo("/login?reason=session-replaced");
         });
-        connection.On<BalanceChangedNotification>("BalanceChanged", notification =>
+        nextConnection.On<BalanceChangedNotification>("BalanceChanged", notification =>
         {
             LastMessage = $"Số dư tài khoản {notification.AccountNumber} vừa thay đổi.";
             session.NotifyBankingDataChanged();
             MessageChanged?.Invoke();
         });
-        connection.On<TransactionReceivedNotification>("TransactionReceived", notification =>
+        nextConnection.On<TransactionReceivedNotification>("TransactionReceived", notification =>
         {
             LastMessage = $"Có cập nhật giao dịch {notification.ReferenceNo}.";
             session.NotifyBankingDataChanged();
             MessageChanged?.Invoke();
         });
-        connection.Reconnecting += _ =>
+        nextConnection.Reconnecting += _ =>
         {
             LastMessage = "Kết nối realtime đang được khôi phục…";
             MessageChanged?.Invoke();
             return Task.CompletedTask;
         };
-        connection.Reconnected += _ =>
+        nextConnection.Reconnected += _ =>
         {
             LastMessage = "Đã khôi phục kết nối realtime.";
             session.NotifyBankingDataChanged();
             MessageChanged?.Invoke();
             return Task.CompletedTask;
         };
+
+        connection = nextConnection;
+        connectionAccessToken = boundAccessToken;
         try
         {
-            await connection.StartAsync();
+            await nextConnection.StartAsync();
         }
         catch
         {
@@ -74,12 +112,25 @@ public sealed class RealtimeService(ApiSession session, HttpClient httpClient, N
         MessageChanged?.Invoke();
     }
 
-    private async Task StopAsync()
+    private async Task StopCoreAsync()
     {
-        if (connection is null) return;
-        await connection.DisposeAsync();
+        var previousConnection = connection;
         connection = null;
+        connectionAccessToken = null;
+        if (previousConnection is not null) await previousConnection.DisposeAsync();
     }
 
-    public ValueTask DisposeAsync() => connection is null ? ValueTask.CompletedTask : connection.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await syncGate.WaitAsync();
+        try
+        {
+            await StopCoreAsync();
+        }
+        finally
+        {
+            syncGate.Release();
+            syncGate.Dispose();
+        }
+    }
 }

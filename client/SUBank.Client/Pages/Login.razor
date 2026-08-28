@@ -2,6 +2,7 @@
 @page "/login"
 @layout AuthLayout
 @inject ApiSession Session
+@inject RealtimeService Realtime
 @inject NavigationManager Navigation
 
 <PageTitle>Đăng nhập · SUBank</PageTitle>
@@ -75,7 +76,9 @@
         info = null;
         try
         {
+            await Realtime.PrepareForLoginAsync();
             await Session.LoginAsync(model.UserName, model.Password);
+            Realtime.ClearMessage();
             NavigateAfterLogin();
         }
         catch (Exception exception) { error = exception.Message; }

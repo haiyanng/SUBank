@@ -34,10 +34,9 @@
                 <span class="nav-section-label">Ngân hàng cá nhân</span>
                 <NavLink class="sidebar-link" href="accounts" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌂</span><span>Trang chủ</span></NavLink>
                 <NavLink class="sidebar-link" href="transfer" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⇄</span><span>Chuyển tiền</span></NavLink>
-                <NavLink class="sidebar-link" href="statements" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">▤</span><span>Sao kê</span></NavLink>
                 <NavLink class="sidebar-link" href="qr" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌗</span><span>QR</span></NavLink>
+                <NavLink class="sidebar-link" href="statements" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">▤</span><span>Sao kê</span></NavLink>
                 <NavLink class="sidebar-link" href="profile" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◎</span><span>Thông tin khách hàng</span></NavLink>
-                <NavLink class="sidebar-link" href="address-change" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌖</span><span>Đổi địa chỉ</span></NavLink>
             }
 
             @if (Session.IsInRole("Teller"))
@@ -51,7 +50,6 @@
                 <span class="nav-section-label">Quản trị hệ thống</span>
                 <NavLink class="sidebar-link" href="staff/users" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">♙</span><span>Người dùng bị khóa</span></NavLink>
                 <NavLink class="sidebar-link" href="staff/audit" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">≡</span><span>Nhật ký kiểm toán</span></NavLink>
-                <NavLink class="sidebar-link" href="staff/address-changes" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">✓</span><span>Duyệt đổi địa chỉ</span></NavLink>
             }
         </nav>
 

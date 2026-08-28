@@ -31,7 +31,7 @@ Identity quản lý `UserName`, password hash, failure count, lockout và role. 
 | `UserId` | `nvarchar(450)` | FK `AspNetUsers`, required, unique |
 | `FullName` | `nvarchar(150)` | required |
 | `DateOfBirth` | `date` | required |
-| `IdentityNumber` | `varchar(20)` | required, unique, dữ liệu demo |
+| `IdentityCardNumber` | `varchar(20)` | required, unique, số CCCD/CMND demo |
 | `Phone` | `varchar(20)` | required, unique |
 | `Email` | `nvarchar(254)` | required, unique |
 | `PermanentAddress` | `nvarchar(500)` | required |
@@ -92,7 +92,7 @@ Unique index: `(CreatedByUserId, IdempotencyKey)`. Check theo loại:
 
 ## Bảng P1
 
-`RefreshToken` đã được triển khai trong Auth P0. `UserSession` được triển khai trong feature active-session P1. `AddressChangeRequest` và `AiQueryLog` chỉ được thêm khi vertical slice tương ứng bắt đầu; `Beneficiary` thuộc P2.
+`RefreshToken` đã được triển khai trong Auth P0. `UserSession` được triển khai trong feature active-session P1. `AiQueryLog` chỉ được thêm khi vertical slice tương ứng bắt đầu; `Beneficiary` thuộc P2.
 
 ### RefreshToken
 
@@ -121,26 +121,10 @@ Unique index: `(CreatedByUserId, IdempotencyKey)`. Check theo loại:
 
 SQL chỉ lưu lịch sử. Redis key theo user mới là nguồn quyết định `sid` đang active; không lưu raw access/refresh token trong bảng này.
 
-### AddressChangeRequest
-
-| Cột | Kiểu | Quy tắc |
-|---|---|---|
-| `Id` | `bigint` | PK, identity; không expose |
-| `RequestNo` | `varchar(30)` | business identifier unique |
-| `CustomerProfileId` | `bigint` | required FK |
-| `PermanentAddress` | `nvarchar(500)` | required |
-| `TemporaryAddress` | `nvarchar(500)` | nullable |
-| `Status` | `varchar(20)` | Pending/Approved/Rejected |
-| `RequestedAtUtc`, `DecidedAtUtc` | `datetimeoffset` | thời gian UTC |
-| `DecidedByUserId` | `nvarchar(450)` | nullable FK Admin |
-| `RejectionReason` | `nvarchar(280)` | bắt buộc khi reject |
-
-Mỗi Customer chỉ có một request Pending. Approve request và cập nhật `CustomerProfile` phải nằm trong cùng SQL transaction.
-
 ## Index tối thiểu
 
 - Identity normalized username.
-- `CustomerProfile.UserId`, `IdentityNumber`, `Phone`, `Email` unique.
+- `CustomerProfile.UserId`, `IdentityCardNumber`, `Phone`, `Email` unique.
 - `BankAccount.AccountNumber` unique; `CustomerProfileId`.
 - `FinancialTransaction.ReferenceNo` unique.
 - `FinancialTransaction.SourceAccountId, CreatedAtUtc`.
@@ -149,25 +133,28 @@ Mỗi Customer chỉ có một request Pending. Approve request và cập nhật
 - `AuditLog.CreatedAtUtc`; `AuditLog.UserId, CreatedAtUtc`.
 - `RefreshToken.TokenHash` unique; `RefreshToken.UserId, SessionId`.
 - `UserSession.UserId, SessionId` unique; `UserSession.UserId, RevokedAtUtc`.
-- `AddressChangeRequest.RequestNo` unique; `AddressChangeRequest.CustomerProfileId, Status`.
 
 ## Format business identifier
 
-- `AccountNumber`: 10 chữ số; seed bắt đầu từ `1000000001`.
+- `AccountNumber`: 10 chữ số; tài khoản chính của Customer demo trùng với số điện thoại/tên đăng nhập.
 - `ReferenceNo`: `SUB` + UTC `yyyyMMddHHmmssfff` + 6 ký tự ngẫu nhiên viết hoa; unique constraint là lớp bảo vệ cuối.
 - `IdempotencyKey`: client tạo GUID dạng `N` hoặc chuỗi tương đương tối đa 64 ký tự.
 
 ## Seed P0
 
 - `0900000001`, role Customer:
-  - account `1000000001`, balance mở đầu `100000000.00`;
-  - account `1000000003`, balance mở đầu `20000000.00`.
+  - tài khoản chính `0900000001`, balance mở đầu `100000000.00`;
+  - account `1000000003`, balance mở đầu `20000000.00`;
+  - account `1234567890`, balance mở đầu `15000000.00`;
+  - account `1234567891`, balance mở đầu `5000000.00`.
 - `0900000002`, role Customer:
-  - account `1000000002`, balance mở đầu `50000000.00`;
-  - account `1000000004`, balance mở đầu `10000000.00`.
+  - tài khoản chính `0900000002`, balance mở đầu `50000000.00`;
+  - account `1000000004`, balance mở đầu `10000000.00`;
+  - account `2234567890`, balance mở đầu `15000000.00`;
+  - account `2234567891`, balance mở đầu `5000000.00`.
 - `teller`, role Teller.
 - `admin`, role Admin.
-- Database Development cũ được đổi username `customer.a`/`customer.b` tại chỗ, giữ nguyên `UserId` và toàn bộ foreign key liên quan.
+- Database Development cũ được đổi username `customer.a`/`customer.b` và số tài khoản chính `1000000001`/`1000000002` tại chỗ, giữ nguyên ID và toàn bộ foreign key liên quan.
 - Seed bổ sung từng profile/account còn thiếu và không đặt lại balance của account đã tồn tại.
 - Dữ liệu đều tổng hợp; password/transaction password chỉ dành cho Development và không tái sử dụng secret thật.
 
