@@ -14,7 +14,10 @@ public sealed class ActiveSessionMiddleware(RequestDelegate next)
             var sessionId = context.User.FindFirstValue("sid");
             if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(sessionId) ||
                 !await sessions.IsActiveAsync(userId, sessionId, context.RequestAborted))
+            {
+                context.Response.Headers["WWW-Authenticate"] = "Bearer error=\"invalid_token\"";
                 throw new AuthenticationException("Phiên đăng nhập không còn hiệu lực.");
+            }
         }
 
         await next(context);

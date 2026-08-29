@@ -4,19 +4,43 @@ using SUBank.Contracts.Realtime;
 
 namespace SUBank.Api.Realtime;
 
-public sealed class SignalRRealtimeNotifier(IHubContext<BankingHub> hub, ILogger<SignalRRealtimeNotifier> logger)
+public sealed class SignalRRealtimeNotifier(
+    IHubContext<BankingHub> hub,
+    IActiveSessionStore activeSessions,
+    ILogger<SignalRRealtimeNotifier> logger)
     : IRealtimeNotifier
 {
     public Task ForceLogoutAsync(string sessionId, CancellationToken cancellationToken) =>
         SendBestEffortAsync(RealtimeGroups.Session(sessionId), "ForceLogout", null, cancellationToken);
 
     public Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken) =>
-        SendBestEffortAsync(RealtimeGroups.User(userId), "BalanceChanged",
+        SendToActiveSessionBestEffortAsync(userId, "BalanceChanged",
             new BalanceChangedNotification(accountNumber), cancellationToken);
 
     public Task TransactionReceivedAsync(string userId, string referenceNo, string accountNumber, CancellationToken cancellationToken) =>
-        SendBestEffortAsync(RealtimeGroups.User(userId), "TransactionReceived",
+        SendToActiveSessionBestEffortAsync(userId, "TransactionReceived",
             new TransactionReceivedNotification(referenceNo, accountNumber), cancellationToken);
+
+    private async Task SendToActiveSessionBestEffortAsync(
+        string userId,
+        string method,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var sessionId = await activeSessions.GetActiveSessionIdAsync(userId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(sessionId)) return;
+
+            await SendBestEffortAsync(RealtimeGroups.Session(sessionId), method, payload, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception,
+                "Không thể xác định active session cho SignalR event {EventName}; client sẽ tải lại qua REST.",
+                method);
+        }
+    }
 
     private async Task SendBestEffortAsync(string group, string method, object? payload, CancellationToken cancellationToken)
     {

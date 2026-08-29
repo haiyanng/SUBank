@@ -10,7 +10,8 @@
     <button class="btn btn-primary btn-lg w-100" disabled="@busy">@(busy ? "Đang xử lý..." : "Ghi nhận nộp tiền")</button>
 </div></div></EditForm></div></div>
 @code {
-    private readonly FormModel model = new() { Account = "0900000001", Amount = 500000, Description = "Nộp tiền tại quầy" }; private string? message; private bool success; private bool busy;
-    private async Task SubmitAsync() { busy = true; message = null; try { var r = await Session.DepositAsync(new(model.Account, model.Amount, model.Description)); success = true; message = $"Nộp tiền thành công. Mã giao dịch: {r?.ReferenceNo}"; } catch (Exception ex) { success = false; message = ex.Message; } finally { busy = false; } }
+    private readonly FormModel model = new() { Account = "0900000001", Amount = 500000, Description = "Nộp tiền tại quầy" }; private readonly IdempotencyIntentTracker<DepositIntent> idempotencyIntent = new(); private string? message; private bool success; private bool busy;
+    private async Task SubmitAsync() { if (busy) return; busy = true; message = null; try { var request = new CashDepositRequest(model.Account, model.Amount, model.Description); var intent = new DepositIntent(model.Account.Trim(), model.Amount, model.Description?.Trim() ?? string.Empty); var r = await Session.DepositAsync(request, idempotencyIntent.GetOrCreateKey(intent)); idempotencyIntent.Complete(); success = true; message = $"Nộp tiền thành công. Mã giao dịch: {r?.ReferenceNo}"; } catch (Exception ex) { success = false; message = ex.Message; } finally { busy = false; } }
+    private sealed record DepositIntent(string AccountNumber, decimal Amount, string Description);
     private sealed class FormModel { public string Account { get; set; } = ""; public decimal Amount { get; set; } public string? Description { get; set; } }
 }

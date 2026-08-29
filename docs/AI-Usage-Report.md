@@ -419,6 +419,84 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: ứng dụng SPA dùng access token trong memory phải có authentication bootstrap gate; việc API bảo vệ đúng bằng `401` không đủ nếu UI vẫn cho component nghiệp vụ chạy trước khi trạng thái phiên được khôi phục.
 
+## Entry 033 - Tổng hợp nhật ký lỗi và phát hiện kỹ thuật
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: tổng hợp lịch sử lỗi, sự cố môi trường, rủi ro thiết kế và kết quả code review mà không sửa thêm business code.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu ghi lại toàn bộ lỗi có bằng chứng từ lúc bắt đầu xây dựng, nêu cách sửa đối với mục đã xử lý và giữ nguyên R01–R21 cho con người quyết định. AI đối chiếu Git history, source hiện tại và Entry 001–032, phân biệt lỗi thật, sự cố chỉ được restart, rủi ro được phát hiện sớm và thay đổi yêu cầu không phải bug.
+- File/module bị tác động: tạo `docs/Issue-Register.md`; thêm liên kết trong `README.md`; cập nhật báo cáo này. Ba file code của R13 đã thay đổi từ yêu cầu trước và không bị thay đổi thêm trong công việc tài liệu này.
+- Kiểm chứng đã thực hiện: kiểm tra đủ R01–R21 trên source; đối chiếu commit và AI Usage entry; kiểm tra Markdown, Git diff và trạng thái working tree. Không chạy test và không khởi động demo vì task chỉ thay đổi tài liệu.
+- Kết quả: Issue Register ghi rõ H01–H16, R01–R21, các phát hiện QR đang hoãn và các mục bổ sung. R13 được ghi đúng là đã sửa trong working tree, build Release thành công nhưng chưa test/commit; các R khác chưa sửa. Không có đề xuất nào được viết như thể đã triển khai.
+- Vấn đề còn lại: Git và report không thể phục dựng những compiler error tạm thời chưa từng được log. Chủ dự án cần duyệt mức độ và quyết định issue nào được sửa tiếp.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: issue register phải tách trạng thái sửa khỏi bằng chứng kiểm chứng; restart dịch vụ không được gọi là source-code fix; quyết định UX/phạm vi không nên bị ghi nhầm thành bug.
+
+## Entry 034 - Sửa idempotency phía Client cho retry giao dịch
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa riêng R01 và dừng để chủ dự án review trước khi xử lý lỗi tiếp theo.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu bắt đầu sửa danh sách lỗi nhưng sau đó thu hẹp phạm vi, chỉ sửa R01 và không đụng QR. AI xác nhận Client đang sinh key mới trong mỗi lần gọi transfer/deposit, chuyển quyền sở hữu key về page và giữ key theo một logical transaction intent qua các lần retry.
+- File/module bị tác động: `ApiSession.cs`, `Transfer.razor`, `StaffDeposit.razor`, helper mới `IdempotencyIntentTracker.cs`, `Issue-Register.md` và báo cáo này.
+- Kiểm chứng đã thực hiện: rà soát toàn bộ call site của `TransferAsync`/`DepositAsync`, chạy `git diff --check` và build Release toàn solution thành công với 0 warning, 0 error. Không chạy test theo quyết định hiện tại của chủ dự án.
+- Kết quả: retry cùng source/destination/account, amount và description tái sử dụng cùng `Idempotency-Key`; đổi payload tạo key mới; response thành công mới kết thúc intent. Transaction password không tham gia định danh intent vì không phải nội dung giao dịch và backend không đưa nó vào request hash.
+- Vấn đề còn lại: chưa mô phỏng tình huống server commit nhưng response bị ngắt bằng integration/browser test; R15 về hai request đồng thời cùng key ở backend là lỗi riêng và chưa được sửa; R02–R12, R14–R21 vẫn giữ nguyên.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: idempotency key phải sống lâu bằng ý định nghiệp vụ, không phải lâu bằng một HTTP request; transport layer không thể tự quyết định khi nào người dùng đang retry cùng một giao dịch.
+
+## Entry 035 - Khép kín idempotency đồng thời ở Backend
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: ưu tiên sửa R15, một lỗi concurrency khó, sau khi R01 phía Client được duyệt.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tiếp tục sửa lỗi khó trước và chưa làm lỗi dễ. AI chọn R15 vì đây là phần Backend phụ thuộc trực tiếp vào R01: hai request cùng actor và key có thể cùng vượt pre-check, request thua nhận concurrency/unique conflict dù winner đã commit. AI rà soát độc lập cả transfer và cash deposit trước khi sửa.
+- File/module bị tác động: `BankingService.cs`, `StaffService.cs`, helper mới `IdempotencyReplay.cs`, `Issue-Register.md` và báo cáo này.
+- Kiểm chứng đã thực hiện: kiểm tra unique index `(CreatedByUserId, IdempotencyKey)`, `RowVersion`, SQL transaction, audit và realtime notification; chạy `git diff --check`; build Release toàn solution thành công với 0 warning, 0 error. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Kết quả: request thua rollback và dispose transaction, xóa EF ChangeTracker rồi query lại winner. Cùng type/hash trả response replay thành công; hash/type khác vẫn trả conflict; conflict không liên quan idempotency giữ lỗi số dư/dữ liệu. Chỉ winner ghi audit và phát realtime. Decimal trong request hash được format bằng invariant culture.
+- Vấn đề còn lại: chưa chạy concurrent integration test; thay thuật toán hash có rủi ro tương thích với key đang sống qua thời điểm deploy, nhưng key Client hiện chỉ nằm trong memory và demo không có rolling deployment. Nếu triển khai production thật nên version hóa hash hoặc lưu canonical payload rõ ràng.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: unique index chỉ ngăn ghi trùng, chưa tự biến request thua thành replay đúng; phải kết thúc transaction lỗi, xóa tracking state rồi đọc kết quả winner bằng đúng actor, key, type và payload hash.
+
+## Entry 036 - Làm mới token an toàn và nhất quán lifetime phiên
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa cụm lỗi khó R06 + R16 về access-token refresh, refresh-token rotation đồng thời và Redis TTL.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tiếp tục ưu tiên lỗi khó và chưa làm lỗi dễ. AI rà soát Client, SQL token family, `UserSession`, Redis active-session pointer, CORS và realtime interaction; chốt logical session có thời hạn tuyệt đối thay vì sliding vô hạn, serialize refresh trong một WASM tab và dùng atomic conditional update ở Backend để phân xử hai request rotate cùng token.
+- File/module bị tác động: `ApiSession.cs`; `AuthService.cs`, `JwtOptions.cs`; `IActiveSessionStore.cs`, `RedisActiveSessionStore.cs`; `ActiveSessionMiddleware.cs`, `Program.cs`, hai appsettings; cập nhật fake store để solution compile; `Security-Design.md`, `PROJECT-BLUEPRINT.md`, `Database-Design.md`, `Issue-Register.md` và báo cáo này.
+- Kiểm chứng đã thực hiện: build Release toàn solution thành công với 0 warning, 0 error; `git diff --check`; rà lại rằng request retry luôn được tạo mới và transfer/deposit giữ nguyên idempotency key. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Kết quả: Client refresh trước expiry một phút, chỉ một refresh chạy trong một tab và protected REST request ngoài QR retry tối đa một lần sau Bearer `401`. Session generation ngăn refresh cũ hồi sinh phiên đã logout/ForceLogout. Backend giữ mốc hết hạn tuyệt đối ban đầu, conditional-renew Redis TTL, dùng `ExecuteUpdateAsync` để một request claim rotation, trả `409` cho concurrent loser trong grace 30 giây và chỉ coi reuse ngoài grace là sự cố bảo mật.
+- Vấn đề còn lại: chưa kiểm chứng bằng browser nhiều tab, token expiry thật, Redis TTL và SQL deadlock; bootstrap vẫn chưa phân biệt đầy đủ `401` với `503` vì đó là R19; SignalR reconnect vẫn dùng token capture và retry chưa hoàn chỉnh vì thuộc R07/R08; các method QR không được chuyển sang pipeline refresh theo yêu cầu hoãn QR.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: rotation phải được thiết kế như một state machine đồng thời giữa cookie, SQL và Redis; semaphore phía Client chỉ giải quyết một tab, còn Backend vẫn cần atomic claim và lifetime chung làm nguồn sự thật.
+
+## Entry 037 - Khôi phục realtime và cô lập active session
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa cụm lỗi khó R07 + R08 về vòng đời SignalR và ranh giới active session.
+- Tóm tắt prompt/công việc thực tế: sau khi được giải thích chi tiết hai lỗi, chủ dự án yêu cầu tiếp tục sửa. AI đối chiếu Client reconnect, access-token refresh, Redis active-session pointer, Hub group và post-commit notifier; giữ SignalR là best-effort nhưng loại bỏ việc broadcast kéo dài tới mọi connection của cùng user.
+- File/module bị tác động: `ApiSession.cs`, `RealtimeService.cs`; `IActiveSessionStore.cs`, `RedisActiveSessionStore.cs`; `BankingHub.cs`, `SignalRRealtimeNotifier.cs`, `Program.cs`; fake active-session store để solution compile; `Architecture.md`, `Security-Design.md`, `PROJECT-BLUEPRINT.md`, `Issue-Register.md` và báo cáo này.
+- Kiểm chứng đã thực hiện: chạy `git diff --check`; build Release toàn solution thành công với 0 warning, 0 error. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Kết quả: SignalR lấy access token hiện hành, phân biệt logical session với token rotation, bỏ callback connection cũ và retry initial/`Closed` failure theo backoff tối đa 30 giây cho tới khi logout. Server bỏ user group, xác minh `sid` với Redis khi Hub kết nối, resolve active `sid` khi phát event ngân hàng và đóng Hub khi JWT hết hạn. Redis lỗi làm bỏ qua event best-effort thay vì broadcast hoặc làm giao dịch đã commit báo thất bại.
+- Vấn đề còn lại: chưa browser-test mất mạng dài, token expiry, nhiều tab hoặc session replacement với Redis/SignalR thật. Một race rất hẹp vẫn tồn tại giữa lúc notifier đọc active `sid` và lúc login mới thay pointer vì Redis và SignalR không có transaction chung; REST middleware vẫn là lớp có thẩm quyền. Phần QR không thay đổi theo quyết định hoãn.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: automatic reconnect không xử lý initial-start failure và không retry mãi sau `Closed`; đồng thời user group không phù hợp với hệ thống chỉ cho một active session. Connection lifecycle phải gắn với logical-session generation, còn event nhạy cảm phải route theo active `sid`.
+
+## Entry 038 - Thu hồi token family khi logout
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa lỗi khó R02 về logout bằng refresh cookie đã rotate và race logout/refresh.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu AI tiếp tục sửa các lỗi khó, còn lỗi nghiêm trọng nhưng dễ để lại làm bài thực hành. AI chọn R02 vì bỏ early-return đơn thuần vẫn có thể lọt replacement token được tạo đồng thời; luồng được thiết kế lại quanh logical-session aggregate lock.
+- File/module bị tác động: `AuthService.cs`; `Security-Design.md`, `PROJECT-BLUEPRINT.md`, `Database-Design.md`, `Issue-Register.md` và báo cáo này. Không đổi API contract, schema, package, Client hoặc phần QR.
+- Kiểm chứng đã thực hiện: chạy `git diff --check`; build Release toàn solution thành công với 0 warning, 0 error. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Kết quả: refresh và logout lấy cùng SQL Server `UPDLOCK` trên `UserSession` trong transaction `ReadCommitted`. Logout chấp nhận token cũ/đã revoke/hết hạn làm revocation handle, cập nhật mọi active token cùng `(UserId, SessionId)`, đánh dấu history, compare-delete Redis trước SQL commit và retry một lần khi deadlock. Unknown token vẫn no-op để không lộ trạng thái.
+- Vấn đề còn lại: chưa chạy stale-cookie, repeated logout, concurrent refresh/logout và old-session/new-session test. Redis và SQL không có distributed transaction; nếu commit SQL lỗi sau Redis delete, hệ thống chủ động fail-closed và login mới là đường phục hồi. X06 ghi nhận Client chưa báo đúng khi server logout lỗi; X07 ghi nhận race nhỏ ở audit reason khi login replacement chạy đồng thời. Lỗi R03–R05, R09, R12, R14 và R18 được giữ lại để chủ dự án thực hành; R17 là lỗi khó kế tiếp.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: refresh token rotation biến một token thành chuỗi, nhưng `SessionId` mới là ranh giới phiên. Logout phải nhắm vào logical session và dùng cùng khóa với refresh; thu hồi riêng cookie token không đủ bảo đảm.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:

@@ -56,7 +56,11 @@ public sealed class ActiveSessionMiddlewareTests
     {
         public Task<string?> ReplaceAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
             Task.FromResult<string?>(null);
+        public Task<string?> GetActiveSessionIdAsync(string userId, CancellationToken cancellationToken) =>
+            Task.FromResult(active ? "session-1" : null);
         public Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
+            Task.FromResult(active);
+        public Task<bool> RenewAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
             Task.FromResult(active);
         public Task RevokeAsync(string userId, string sessionId, CancellationToken cancellationToken) => Task.CompletedTask;
     }
@@ -65,7 +69,11 @@ public sealed class ActiveSessionMiddlewareTests
     {
         public Task<string?> ReplaceAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
             throw new DependencyUnavailableException("Unavailable");
+        public Task<string?> GetActiveSessionIdAsync(string userId, CancellationToken cancellationToken) =>
+            throw new DependencyUnavailableException("Unavailable");
         public Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
+            throw new DependencyUnavailableException("Unavailable");
+        public Task<bool> RenewAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
             throw new DependencyUnavailableException("Unavailable");
         public Task RevokeAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
             throw new DependencyUnavailableException("Unavailable");

@@ -33,7 +33,11 @@ Login endpoint có rate limiting riêng theo IP/user. Thông báo lỗi không �
 - Refresh token là chuỗi ngẫu nhiên entropy cao, chỉ gửi bằng `HttpOnly`, `Secure` cookie.
 - SQL chỉ lưu hash của refresh token.
 - Refresh token được rotate sau mỗi lần refresh thành công và token cũ bị revoke.
-- Logout, session replacement và security event phải revoke token/session liên quan.
+- Logical session có thời hạn tuyệt đối theo `Jwt:RefreshTokenDays`; refresh token thay thế, cookie và Redis TTL không được kéo dài quá mốc `UserSession.ExpiresAtUtc` ban đầu.
+- Client serialize refresh trong một tab, chủ động refresh trước khi access token hết hạn và chỉ retry protected request tối đa một lần bằng request mới.
+- Backend dùng atomic conditional update để chỉ một request được rotate cùng refresh token. Request đồng thời thua trong grace period trả `409`; reuse ngoài grace mới thu hồi toàn bộ session.
+- `(UserId, SessionId)` là ranh giới token family. Logout bằng bất kỳ refresh token nhận diện được trong family, kể cả token đã rotate/revoke/hết hạn, phải compare-delete Redis và revoke toàn bộ refresh token còn hiệu lực cùng `UserSession`; unknown token vẫn trả kết quả idempotent và không tiết lộ token có tồn tại.
+- Refresh và logout khóa cùng hàng `UserSession` trước khi rotate/revoke để token kế tiếp không lọt qua race. Session replacement và security event cũng phải revoke token/session liên quan.
 
 Development tách HTTPS port và chỉ cho phép exact Client origin cùng credential. Production dùng same origin. Endpoint refresh/logout sử dụng cookie phải có CSRF control, bao gồm SameSite policy phù hợp, kiểm tra origin và anti-forgery strategy khi cần.
 
@@ -55,7 +59,7 @@ Redis lưu một active `sid` cho mỗi user. Thay session phải nguyên tử. 
 
 Khi active key thiếu, không khớp hoặc Redis unavailable, hệ thống không được bỏ qua kiểm tra. Trả `401` cho session không hợp lệ và `503` khi dependency cần thiết unavailable. SignalR `ForceLogout` chỉ cải thiện UX; middleware và Redis mới có thẩm quyền bảo mật.
 
-Trạng thái implementation: đã có Redis adapter, atomic replace/compare-delete bằng Lua, SQL `UserSession`, middleware fail-closed, refresh/logout gắn với active `sid`, cookie `Secure`, CSRF custom header kèm Origin allow-list, correlation ID và rate limit cho login/transaction password. SignalR đã gửi `ForceLogout` best-effort cho session cũ; integration test vẫn xác nhận REST của session cũ bị Redis/middleware trả `401`.
+Trạng thái implementation: đã có Redis adapter, atomic replace/compare-delete/conditional-renew bằng Lua, SQL `UserSession`, middleware fail-closed, absolute session lifetime, concurrent refresh claim, full-family logout, cookie `Secure`, CSRF custom header kèm Origin allow-list, correlation ID và rate limit cho login/transaction password. Refresh/logout dùng chung `UserSession` aggregate lock; Redis revoke xảy ra trước SQL commit để lỗi giữa chừng chỉ tạo fail-closed. SignalR gửi `ForceLogout` best-effort cho session cũ; Hub kiểm tra `sid` với Redis trước khi nhận connection; event ngân hàng resolve active `sid` rồi chỉ gửi theo session group; connection đóng khi JWT hết hạn. Client dùng token hiện hành khi reconnect và retry với backoff sau initial-start/`Closed`. Build đã thành công nhưng các thay đổi refresh/logout/reconnect/session routing mới chưa được chạy browser, Redis integration hoặc concurrency/network-failure test theo quyết định hiện tại của chủ dự án.
 
 ## Bảo vệ nghiệp vụ tiền
 
@@ -64,7 +68,7 @@ Trạng thái implementation: đã có Redis adapter, atomic replace/compare-del
 - Balance authorization luôn dùng dữ liệu SQL, không dùng cache.
 - Transfer bắt buộc có idempotency key và optimistic concurrency bằng `RowVersion`.
 - Transaction password attempt có rate limiting, safe error và audit.
-- SignalR notification chỉ gửi sau khi commit và không được dùng làm nguồn balance.
+- SignalR notification chỉ gửi sau khi commit, chỉ tới session đang active và không được dùng làm nguồn balance.
 
 ## Input, enumeration và dữ liệu nhạy cảm
 
@@ -88,8 +92,10 @@ Trạng thái implementation: đã có Redis adapter, atomic replace/compare-del
 - Chỉ Admin mở khóa được user.
 - Teller bị `403` ở Admin endpoint; Admin bị `403` ở Teller Cash Deposit.
 - Customer A không truy cập được account/transaction của Customer B.
-- Refresh-token rotation, reuse, revoke và logout.
+- Refresh-token rotation, reuse, revoke; logout bằng cookie hiện hành và cookie cũ sau rotation đều phải thu hồi toàn family.
 - Session mới làm session cũ nhận `401` dù SignalR bị ngắt.
+- Session cũ không nhận `BalanceChanged` hoặc `TransactionReceived` sau khi bị thay thế.
+- SignalR reconnect dùng access token hiện hành, tự retry sau initial/closed failure và ngừng retry khi logout.
 - Duplicate transfer không chuyển tiền hai lần.
 - Concurrent transfer không double-spend.
 - AI không thực thi write tool hoặc arbitrary SQL.

@@ -127,9 +127,11 @@ API phục vụ Blazor WASM đã publish dưới cùng một HTTPS origin. REST 
 
 Mỗi user chỉ có một logical active session. Redis lưu active-session pointer với TTL đồng bộ với thời gian sống của refresh/session. Thay thế session phải là thao tác nguyên tử bằng Redis atomic command hoặc Lua script phù hợp; cấm sử dụng RedLock.
 
+Logical session dùng thời hạn tuyệt đối bảy ngày theo cấu hình hiện tại. Mọi refresh token được rotate trong cùng session phải kế thừa `UserSession.ExpiresAtUtc`; không dùng sliding refresh để cộng thêm bảy ngày sau mỗi lần gọi. Redis chỉ renew TTL khi key vẫn chứa đúng `sid` và chỉ renew tới thời gian còn lại của mốc tuyệt đối. Hai refresh cùng token được phân xử bằng atomic conditional update; request thua trong grace period nhận `409` để retry thay vì bị kết luận nhầm là token reuse. `(UserId, SessionId)` là token-family key; logout từ bất kỳ token nhận diện được trong family phải khóa cùng `UserSession` với refresh rồi thu hồi toàn family và Redis, không chỉ token nằm trong cookie hiện tại.
+
 Sau authentication và trước khi chạy nghiệp vụ, protected request kiểm tra `sub` và `sid` trong JWT với Redis. Session thiếu, không khớp hoặc đã revoke không được chạy protected operation. Khi Redis không hoạt động, hệ thống phải fail closed: trả `503` cho dependency unavailable, không được âm thầm bỏ qua session security.
 
-SQL chỉ lưu session history và refresh token dưới dạng hash. Không log raw token, raw refresh token, session identifier, Redis key hoặc secret. SignalR `ForceLogout` gửi đến group của session cũ và chỉ cải thiện UX; Redis cùng middleware mới là lớp bảo mật có thẩm quyền.
+SQL chỉ lưu session history và refresh token dưới dạng hash. Không log raw token, raw refresh token, session identifier, Redis key hoặc secret. SignalR `ForceLogout` gửi đến group của session cũ và chỉ cải thiện UX; Redis cùng middleware mới là lớp bảo mật có thẩm quyền. Hub chỉ chấp nhận `sid` đang active; `BalanceChanged` và `TransactionReceived` chỉ gửi tới group của active `sid`, không gửi theo user group. Client reconnect bằng access token hiện hành và tự retry có backoff, nhưng REST/SQL vẫn là nguồn sự thật nếu event bị bỏ lỡ.
 
 ## Biểu diễn tiền
 

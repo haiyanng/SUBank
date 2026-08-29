@@ -27,12 +27,41 @@ public sealed class RedisActiveSessionStore(IConnectionMultiplexer redis, IOptio
         }
     }
 
-    public async Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken)
+    public async Task<string?> GetActiveSessionIdAsync(string userId, CancellationToken cancellationToken)
     {
         try
         {
             var value = await redis.GetDatabase().StringGetAsync(Key(userId)).WaitAsync(cancellationToken);
-            return value.HasValue && value == sessionId;
+            return value.HasValue ? value.ToString() : null;
+        }
+        catch (Exception exception) when (exception is RedisException or TimeoutException)
+        {
+            throw Unavailable(exception);
+        }
+    }
+
+    public async Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
+        string.Equals(
+            await GetActiveSessionIdAsync(userId, cancellationToken),
+            sessionId,
+            StringComparison.Ordinal);
+
+    public async Task<bool> RenewAsync(
+        string userId,
+        string sessionId,
+        TimeSpan lifetime,
+        CancellationToken cancellationToken)
+    {
+        if (lifetime <= TimeSpan.Zero) return false;
+
+        const string script = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end";
+        try
+        {
+            var result = await redis.GetDatabase().ScriptEvaluateAsync(
+                script,
+                [Key(userId)],
+                [sessionId, checked((long)lifetime.TotalMilliseconds)]).WaitAsync(cancellationToken);
+            return (long)result == 1;
         }
         catch (Exception exception) when (exception is RedisException or TimeoutException)
         {

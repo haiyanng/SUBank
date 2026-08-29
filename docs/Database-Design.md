@@ -102,7 +102,7 @@ Unique index: `(CreatedByUserId, IdempotencyKey)`. Check theo loại:
 | `UserId` | `nvarchar(450)` | required FK |
 | `SessionId` | `varchar(64)` | required |
 | `TokenHash` | `char(64)` | required, unique |
-| `ExpiresAtUtc` | `datetimeoffset` | required |
+| `ExpiresAtUtc` | `datetimeoffset` | required; không vượt mốc hết hạn tuyệt đối của `UserSession` |
 | `RevokedAtUtc` | `datetimeoffset` | nullable |
 | `CreatedAtUtc` | `datetimeoffset` | required |
 | `ReplacedByTokenId` | `bigint` | nullable self FK |
@@ -115,11 +115,13 @@ Unique index: `(CreatedByUserId, IdempotencyKey)`. Check theo loại:
 | `UserId` | `nvarchar(450)` | required FK |
 | `SessionId` | `varchar(64)` | required; unique theo user; không log/expose |
 | `CreatedAtUtc` | `datetimeoffset` | required |
-| `ExpiresAtUtc` | `datetimeoffset` | required |
+| `ExpiresAtUtc` | `datetimeoffset` | required; mốc hết hạn tuyệt đối của logical session |
 | `RevokedAtUtc` | `datetimeoffset` | nullable |
 | `RevocationReason` | `varchar(50)` | nullable; mã lý do an toàn |
 
 SQL chỉ lưu lịch sử. Redis key theo user mới là nguồn quyết định `sid` đang active; không lưu raw access/refresh token trong bảng này.
+
+Khi rotate refresh token, token thay thế giữ nguyên mốc `UserSession.ExpiresAtUtc`. Redis TTL được conditional-renew tới đúng phần thời gian còn lại và không biến session thành sliding lifetime. Cặp `(UserId, SessionId)` xác định một token family; refresh và logout dùng hàng `UserSession` tương ứng làm aggregate lock. Logout từ một member bất kỳ thu hồi mọi refresh token chưa revoke trong family mà không cần lần theo self-FK `ReplacedByTokenId`.
 
 ## Index tối thiểu
 

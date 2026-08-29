@@ -22,7 +22,7 @@ Infrastructure Implementation
 SQL Server/Azure SQL, Redis hoặc external provider
 ```
 
-REST/JSON và SignalR hoạt động song song, không thay thế nhau. Login, account query, transfer, Teller Cash Deposit và Admin operation luôn đi qua REST API. SignalR chỉ thông báo `ForceLogout`, `TransactionReceived` hoặc `BalanceChanged`; khi nhận event, Client phải gọi REST API để lấy dữ liệu có thẩm quyền từ SQL.
+REST/JSON và SignalR hoạt động song song, không thay thế nhau. Login, account query, transfer, Teller Cash Deposit và Admin operation luôn đi qua REST API. SignalR chỉ thông báo `ForceLogout`, `TransactionReceived` hoặc `BalanceChanged`; khi nhận event, Client phải gọi REST API để lấy dữ liệu có thẩm quyền từ SQL. `ForceLogout` đi tới group của session cũ; event ngân hàng chỉ đi tới group của active `sid` được Redis xác nhận, không broadcast theo user.
 
 Controller chỉ binding request, đọc authentication context, gọi Application use case và map response. Controller không query trực tiếp banking `DbContext` và không chứa business rule làm thay đổi balance.
 
@@ -56,7 +56,7 @@ Là Blazor WebAssembly UI, chỉ phụ thuộc Contracts. Client chứa page/com
 
 - SQL Server/Azure SQL là nguồn sự thật duy nhất cho user profile nghiệp vụ, account, balance, financial transaction, refresh-token history, user-session history và audit.
 - Redis chỉ giữ active-session pointer, rate-limit counter và cache tham chiếu an toàn nếu thực sự cần. Không cache balance.
-- SignalR chỉ gửi realtime UX event sau khi database commit. Client phải gọi lại API để lấy balance chính xác.
+- SignalR chỉ gửi realtime UX event sau khi database commit và chỉ tới active-session group. Client tự phục hồi connection với backoff, nhưng event có thể bị bỏ lỡ nên luôn phải gọi lại API để lấy balance chính xác.
 - OpenAI chỉ diễn giải kết quả read-only do backend đã authorization và tính toán xác định.
 - Statement là read model từ `FinancialTransaction`; PDF được QuestPDF render trong Infrastructure, không có bảng Statement và không cần Chromium.
 

@@ -24,6 +24,9 @@ var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOption
     ?? throw new InvalidOperationException("Missing Jwt configuration.");
 if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
     throw new InvalidOperationException("Jwt:SigningKey must contain at least 32 bytes.");
+if (jwt.AccessTokenMinutes <= 0 || jwt.RefreshTokenDays <= 0 ||
+    jwt.RefreshConcurrencyGraceSeconds is < 1 or > 300)
+    throw new InvalidOperationException("Jwt token lifetimes or refresh concurrency grace are invalid.");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -94,6 +97,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(builder.Configuration["Cors:ClientOrigin"] ?? "http://localhost:5035")
             .AllowAnyHeader()
             .AllowAnyMethod()
+            .WithExposedHeaders("WWW-Authenticate")
             .AllowCredentials();
     });
 });
@@ -125,7 +129,8 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapControllers();
-app.MapHub<BankingHub>("/hubs/banking");
+app.MapHub<BankingHub>("/hubs/banking", options =>
+    options.CloseOnAuthenticationExpiration = true);
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }))
     .WithName("Health")
     .WithTags("System")

@@ -4,7 +4,9 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using SUBank.Application.Abstractions;
@@ -72,53 +74,123 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
 
     public async Task<AuthSession> RefreshAsync(string refreshToken, CancellationToken cancellationToken)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        var current = await dbContext.RefreshTokens.SingleOrDefaultAsync(x => x.TokenHash == Hash(refreshToken), cancellationToken)
-            ?? throw new AuthenticationException("Phiên đăng nhập không hợp lệ.");
-        if (current.RevokedAtUtc is not null)
+        try
         {
-            if (current.ReplacedByTokenId is not null)
-            {
-                await activeSessionStore.RevokeAsync(current.UserId, current.SessionId, cancellationToken);
-                await RevokePersistedSessionAsync(current.UserId, current.SessionId, "REFRESH_REUSE", cancellationToken);
-                await AuditAsync(current.UserId, "REFRESH_TOKEN_REUSE", AuditResult.Failure, cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-            }
-            throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
+            return await RefreshCoreAsync(refreshToken, cancellationToken);
         }
-        if (current.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+        catch (Exception exception) when (IsSqlDeadlock(exception))
+        {
+            throw new ConflictException("Phiên đang được làm mới bởi một yêu cầu khác. Vui lòng thử lại.");
+        }
+    }
+
+    private async Task<AuthSession> RefreshCoreAsync(string refreshToken, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var tokenHash = Hash(refreshToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+        var snapshot = await dbContext.RefreshTokens.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TokenHash == tokenHash, cancellationToken)
+            ?? throw new AuthenticationException("Phiên đăng nhập không hợp lệ.");
+
+        var history = await LockSessionAsync(snapshot.UserId, snapshot.SessionId, cancellationToken);
+        if (history is null || history.RevokedAtUtc is not null || history.ExpiresAtUtc <= now)
             throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
-        if (!await activeSessionStore.IsActiveAsync(current.UserId, current.SessionId, cancellationToken))
+        if (snapshot.RevokedAtUtc is not null)
+            return await RejectRevokedRefreshTokenAsync(snapshot, now, transaction, cancellationToken);
+        if (snapshot.ExpiresAtUtc <= now)
+            throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
+
+        if (!await activeSessionStore.IsActiveAsync(snapshot.UserId, snapshot.SessionId, cancellationToken))
             throw new AuthenticationException("Phiên đăng nhập không còn hiệu lực.");
 
-        var user = await userManager.FindByIdAsync(current.UserId);
+        var user = await userManager.FindByIdAsync(snapshot.UserId);
         if (user is null || !user.IsActive || await userManager.IsLockedOutAsync(user))
             throw new AuthenticationException("Tài khoản không thể tiếp tục phiên đăng nhập.");
 
-        current.RevokedAtUtc = DateTimeOffset.UtcNow;
-        var session = await CreateSessionAsync(user, current.SessionId, cancellationToken, auditLogin: false);
-        var replacement = await dbContext.RefreshTokens.SingleAsync(x => x.TokenHash == Hash(session.RefreshToken), cancellationToken);
+        var claimed = await dbContext.RefreshTokens
+            .Where(x => x.Id == snapshot.Id && x.RevokedAtUtc == null && x.ExpiresAtUtc > now)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(x => x.RevokedAtUtc, now),
+                cancellationToken);
+        if (claimed == 0)
+        {
+            dbContext.ChangeTracker.Clear();
+            var latest = await dbContext.RefreshTokens.AsNoTracking()
+                .SingleAsync(x => x.Id == snapshot.Id, cancellationToken);
+            if (latest.RevokedAtUtc is not null)
+                return await RejectRevokedRefreshTokenAsync(latest, DateTimeOffset.UtcNow, transaction, cancellationToken);
+            if (latest.ExpiresAtUtc <= DateTimeOffset.UtcNow)
+                throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
+            throw new ConflictException("Phiên đang được làm mới bởi một yêu cầu khác. Vui lòng thử lại.");
+        }
+
+        var current = await dbContext.RefreshTokens.SingleAsync(x => x.Id == snapshot.Id, cancellationToken);
+        var session = await CreateSessionAsync(
+            user,
+            current.SessionId,
+            cancellationToken,
+            auditLogin: false,
+            refreshExpiresAtUtc: history.ExpiresAtUtc);
+        var replacement = await dbContext.RefreshTokens.SingleAsync(
+            x => x.TokenHash == Hash(session.RefreshToken), cancellationToken);
         current.ReplacedByTokenId = replacement.Id;
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        var remainingLifetime = history.ExpiresAtUtc - DateTimeOffset.UtcNow;
+        if (remainingLifetime <= TimeSpan.Zero ||
+            !await activeSessionStore.RenewAsync(
+                current.UserId, current.SessionId, remainingLifetime, cancellationToken))
+            throw new AuthenticationException("Phiên đăng nhập không còn hiệu lực.");
+
         await transaction.CommitAsync(cancellationToken);
         return session;
     }
 
     public async Task LogoutAsync(string refreshToken, CancellationToken cancellationToken)
     {
-        var token = await dbContext.RefreshTokens.SingleOrDefaultAsync(x => x.TokenHash == Hash(refreshToken), cancellationToken);
-        if (token is null || token.RevokedAtUtc is not null) return;
+        try
+        {
+            await LogoutCoreAsync(refreshToken, cancellationToken);
+        }
+        catch (Exception exception) when (IsSqlDeadlock(exception))
+        {
+            dbContext.ChangeTracker.Clear();
+            try
+            {
+                await LogoutCoreAsync(refreshToken, cancellationToken);
+            }
+            catch (Exception retryException) when (IsSqlDeadlock(retryException))
+            {
+                throw new ConflictException("Phiên đang được cập nhật đồng thời. Vui lòng thử đăng xuất lại.");
+            }
+        }
+    }
 
-        await activeSessionStore.RevokeAsync(token.UserId, token.SessionId, cancellationToken);
-        token.RevokedAtUtc = DateTimeOffset.UtcNow;
-        var history = await dbContext.UserSessions.SingleOrDefaultAsync(
-            x => x.UserId == token.UserId && x.SessionId == token.SessionId, cancellationToken);
+    private async Task LogoutCoreAsync(string refreshToken, CancellationToken cancellationToken)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted, cancellationToken);
+        var token = await dbContext.RefreshTokens.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TokenHash == Hash(refreshToken), cancellationToken);
+        if (token is null) return;
+
+        var history = await LockSessionAsync(token.UserId, token.SessionId, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
         if (history is not null && history.RevokedAtUtc is null)
         {
-            history.RevokedAtUtc = DateTimeOffset.UtcNow;
+            history.RevokedAtUtc = now;
             history.RevocationReason = "LOGOUT";
         }
+
+        await dbContext.RefreshTokens
+            .Where(x => x.UserId == token.UserId &&
+                        x.SessionId == token.SessionId &&
+                        x.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAtUtc, now), cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await activeSessionStore.RevokeAsync(token.UserId, token.SessionId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<UserSummary?> GetCurrentUserAsync(string userId, CancellationToken cancellationToken)
@@ -127,12 +199,20 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
         return user is null ? null : new UserSummary(user.UserName!, (await userManager.GetRolesAsync(user)).ToArray());
     }
 
-    private async Task<AuthSession> CreateSessionAsync(ApplicationUser user, string sessionId,
-        CancellationToken cancellationToken, bool auditLogin = true, bool createHistory = false)
+    private async Task<AuthSession> CreateSessionAsync(
+        ApplicationUser user,
+        string sessionId,
+        CancellationToken cancellationToken,
+        bool auditLogin = true,
+        bool createHistory = false,
+        DateTimeOffset? refreshExpiresAtUtc = null)
     {
         var now = DateTimeOffset.UtcNow;
-        var accessExpiry = now.AddMinutes(jwt.AccessTokenMinutes);
-        var refreshExpiry = now.AddDays(jwt.RefreshTokenDays);
+        var refreshExpiry = refreshExpiresAtUtc ?? now.AddDays(jwt.RefreshTokenDays);
+        if (refreshExpiry <= now)
+            throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
+        var requestedAccessExpiry = now.AddMinutes(jwt.AccessTokenMinutes);
+        var accessExpiry = requestedAccessExpiry < refreshExpiry ? requestedAccessExpiry : refreshExpiry;
         var roles = await userManager.GetRolesAsync(user);
         var claims = new List<Claim>
         {
@@ -160,6 +240,27 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             rawRefreshToken, refreshExpiry, sessionId);
     }
 
+    private async Task<AuthSession> RejectRevokedRefreshTokenAsync(
+        RefreshToken token,
+        DateTimeOffset now,
+        IDbContextTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (token.ReplacedByTokenId is not null)
+        {
+            var concurrencyGrace = TimeSpan.FromSeconds(jwt.RefreshConcurrencyGraceSeconds);
+            if (token.RevokedAtUtc >= now - concurrencyGrace)
+                throw new ConflictException("Phiên đang được làm mới bởi một yêu cầu khác. Vui lòng thử lại.");
+
+            await activeSessionStore.RevokeAsync(token.UserId, token.SessionId, cancellationToken);
+            await RevokePersistedSessionAsync(token.UserId, token.SessionId, "REFRESH_REUSE", cancellationToken);
+            await AuditAsync(token.UserId, "REFRESH_TOKEN_REUSE", AuditResult.Failure, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
+    }
+
     private async Task RevokePersistedSessionAsync(string userId, string sessionId, string reason,
         CancellationToken cancellationToken)
     {
@@ -177,6 +278,15 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
         foreach (var token in tokens) token.RevokedAtUtc = now;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private Task<UserSession?> LockSessionAsync(
+        string userId,
+        string sessionId,
+        CancellationToken cancellationToken) =>
+        dbContext.UserSessions
+            .FromSqlInterpolated(
+                $"SELECT * FROM [UserSessions] WITH (UPDLOCK, ROWLOCK) WHERE [UserId] = {userId} AND [SessionId] = {sessionId}")
+            .SingleOrDefaultAsync(cancellationToken);
 
     private async Task<bool> LoginNameMatchesCustomerProfileAsync(ApplicationUser user, string loginName,
         CancellationToken cancellationToken)
@@ -198,4 +308,13 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
     private static AuditLog NewAudit(string userId, string action, AuditResult result) =>
         new() { UserId = userId, Action = action, Result = result, CreatedAtUtc = DateTimeOffset.UtcNow };
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+    private static bool IsSqlDeadlock(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException { Number: 1205 }) return true;
+        }
+
+        return false;
+    }
 }

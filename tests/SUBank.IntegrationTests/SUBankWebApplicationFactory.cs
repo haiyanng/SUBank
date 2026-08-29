@@ -76,6 +76,12 @@ internal sealed class TestActiveSessionStore : IActiveSessionStore
     public Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
         Task.FromResult(sessions.TryGetValue(userId, out var active) && active == sessionId);
 
+    public Task<string?> GetActiveSessionIdAsync(string userId, CancellationToken cancellationToken) =>
+        Task.FromResult(sessions.TryGetValue(userId, out var active) ? active : null);
+
+    public Task<bool> RenewAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
+        IsActiveAsync(userId, sessionId, cancellationToken);
+
     public Task RevokeAsync(string userId, string sessionId, CancellationToken cancellationToken)
     {
         if (sessions.TryGetValue(userId, out var active) && active == sessionId)
