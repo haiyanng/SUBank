@@ -10,6 +10,9 @@ namespace SUBank.Api.Controllers;
 [Route("api/admin")]
 public sealed class AdminController(IStaffService service) : ControllerBase
 {
+    [HttpGet("users")]
+    public Task<IReadOnlyList<UserManagementSummary>> Users(CancellationToken ct) => service.GetUsersAsync(ct);
+
     [HttpGet("locked-users")]
     public Task<IReadOnlyList<LockedUserSummary>> LockedUsers(CancellationToken ct) => service.GetLockedUsersAsync(ct);
 

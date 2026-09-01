@@ -1,17 +1,139 @@
 @page "/staff/deposit"
+@using System.ComponentModel.DataAnnotations
 @inject ApiSession Session
+
 <PageTitle>Nộp tiền mặt · SUBank</PageTitle>
-<div class="page-heading"><div><div class="eyebrow">Khu vực giao dịch viên</div><h1 class="mb-1">Nộp tiền mặt</h1><p>Ghi nhận tiền mặt vào tài khoản khách hàng tại quầy.</p></div></div>
-<div class="row"><div class="col-lg-7"><EditForm Model="model" OnValidSubmit="SubmitAsync"><div class="card"><div class="card-body p-lg-4">
-    <div class="mb-3"><label class="form-label">Tài khoản nhận</label><InputText class="form-control" @bind-Value="model.Account" /></div>
-    <div class="mb-3"><label class="form-label">Số tiền</label><InputNumber class="form-control" @bind-Value="model.Amount" /></div>
-    <div class="mb-3"><label class="form-label">Nội dung</label><InputText class="form-control" @bind-Value="model.Description" /></div>
-    @if (message is not null) { <div class="alert @(success ? "alert-success" : "alert-danger")">@message</div> }
-    <button class="btn btn-primary btn-lg w-100" disabled="@busy">@(busy ? "Đang xử lý..." : "Ghi nhận nộp tiền")</button>
-</div></div></EditForm></div></div>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Khu vực giao dịch viên</div>
+        <h1 class="mb-1">Nộp tiền mặt</h1>
+        <p>Ghi nhận tiền mặt vào tài khoản khách hàng tại quầy.</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-7">
+        <EditForm Model="model" OnValidSubmit="SubmitAsync">
+            <DataAnnotationsValidator />
+            <div class="card">
+                <div class="card-body p-lg-4">
+                    <div class="mb-3">
+                        <label class="form-label" for="destination-account">Tài khoản nhận</label>
+                        <InputText id="destination-account"
+                                   class="form-control"
+                                   autocomplete="off"
+                                   inputmode="numeric"
+                                   maxlength="10"
+                                   @bind-Value="model.Account" />
+                        <ValidationMessage For="@(() => model.Account)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="deposit-amount">Số tiền</label>
+                        <InputNumber id="deposit-amount"
+                                     class="form-control"
+                                     min="0.01"
+                                     max="9999999999999999.99"
+                                     step="0.01"
+                                     @bind-Value="model.Amount" />
+                        <ValidationMessage For="@(() => model.Amount)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="deposit-description">Nội dung</label>
+                        <InputText id="deposit-description"
+                                   class="form-control"
+                                   maxlength="280"
+                                   @bind-Value="model.Description" />
+                        <ValidationMessage For="@(() => model.Description)" />
+                    </div>
+
+                    @if (message is not null)
+                    {
+                        <div class="alert @(success ? "alert-success" : "alert-danger")" role="alert">@message</div>
+                    }
+
+                    <button class="btn btn-primary btn-lg w-100" disabled="@busy">
+                        @(busy ? "Đang xử lý..." : "Ghi nhận nộp tiền")
+                    </button>
+                </div>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
 @code {
-    private readonly FormModel model = new() { Account = "0900000001", Amount = 500000, Description = "Nộp tiền tại quầy" }; private readonly IdempotencyIntentTracker<DepositIntent> idempotencyIntent = new(); private string? message; private bool success; private bool busy;
-    private async Task SubmitAsync() { if (busy) return; busy = true; message = null; try { var request = new CashDepositRequest(model.Account, model.Amount, model.Description); var intent = new DepositIntent(model.Account.Trim(), model.Amount, model.Description?.Trim() ?? string.Empty); var r = await Session.DepositAsync(request, idempotencyIntent.GetOrCreateKey(intent)); idempotencyIntent.Complete(); success = true; message = $"Nộp tiền thành công. Mã giao dịch: {r?.ReferenceNo}"; } catch (Exception ex) { success = false; message = ex.Message; } finally { busy = false; } }
+    private FormModel model = new();
+    private readonly IdempotencyIntentTracker<DepositIntent> idempotencyIntent = new();
+    private string? message;
+    private bool success;
+    private bool busy;
+
+    private async Task SubmitAsync()
+    {
+        if (busy)
+        {
+            return;
+        }
+
+        busy = true;
+        message = null;
+
+        try
+        {
+            var accountNumber = (model.Account ?? string.Empty).Trim();
+            var description = string.IsNullOrWhiteSpace(model.Description)
+                ? null
+                : model.Description.Trim();
+            var intent = new DepositIntent(accountNumber, model.Amount, description ?? string.Empty);
+            var request = new CashDepositRequest(accountNumber, model.Amount, description);
+            var response = await Session.DepositAsync(request, idempotencyIntent.GetOrCreateKey(intent));
+
+            idempotencyIntent.Complete();
+            model = new FormModel();
+            success = true;
+            message = $"Nộp tiền thành công. Mã giao dịch: {response?.ReferenceNo}";
+        }
+        catch (Exception exception)
+        {
+            // Không hoàn tất intent khi lỗi: lần gửi lại cùng dữ liệu phải dùng lại idempotency key.
+            success = false;
+            message = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
     private sealed record DepositIntent(string AccountNumber, decimal Amount, string Description);
-    private sealed class FormModel { public string Account { get; set; } = ""; public decimal Amount { get; set; } public string? Description { get; set; } }
+
+    private sealed class FormModel : IValidatableObject
+    {
+        [Required(ErrorMessage = "Vui lòng nhập số tài khoản nhận.")]
+        [RegularExpression("^[0-9]{10}$", ErrorMessage = "Số tài khoản phải gồm đúng 10 chữ số.")]
+        public string Account { get; set; } = string.Empty;
+
+        public decimal Amount { get; set; }
+
+        [StringLength(280, ErrorMessage = "Nội dung không được vượt quá 280 ký tự.")]
+        public string? Description { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (Amount < 0.01m || Amount > 9_999_999_999_999_999.99m)
+            {
+                yield return new ValidationResult(
+                    "Số tiền phải từ 0,01 đến 9.999.999.999.999.999,99.",
+                    [nameof(Amount)]);
+            }
+            else if (decimal.Round(Amount, 2) != Amount)
+            {
+                yield return new ValidationResult(
+                    "Số tiền chỉ được có tối đa 2 chữ số thập phân.",
+                    [nameof(Amount)]);
+            }
+        }
+    }
 }

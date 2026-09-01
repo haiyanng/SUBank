@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SUBank.Application.Abstractions;
 using SUBank.Application.Exceptions;
 using SUBank.Application.Rules;
@@ -19,33 +20,54 @@ public sealed class BankingService(
     SUBankDbContext dbContext,
     UserManager<ApplicationUser> userManager,
     IPasswordHasher<ApplicationUser> passwordHasher,
-    IRealtimeNotifier realtimeNotifier) : IBankingService
+    IRealtimeNotifier realtimeNotifier,
+    ILogger<BankingService> logger) : IBankingService
 {
-    public async Task<IReadOnlyList<AccountSummary>> GetAccountsAsync(string userId, CancellationToken cancellationToken) =>
-        await dbContext.BankAccounts.AsNoTracking()
+    public async Task<IReadOnlyList<AccountSummary>> GetAccountsAsync(string userId, CancellationToken cancellationToken)
+    {
+        var accounts = await dbContext.BankAccounts.AsNoTracking()
             .Where(x => x.CustomerProfile.UserId == userId)
-            .OrderBy(x => x.AccountNumber)
-            .Select(x => new AccountSummary(x.AccountNumber, x.Balance, x.Currency, x.Status.ToString()))
+            .OrderBy(x => x.CreatedAtUtc)
+            .ThenBy(x => x.Id)
+            .Select(x => new AccountSummary(x.AccountNumber, x.Balance, x.Currency, x.Status.ToString(), false))
             .ToListAsync(cancellationToken);
 
+        return accounts.Select((account, index) => account with { IsPrimary = index == 0 }).ToList();
+    }
+
     public async Task<AccountDetail?> GetAccountAsync(string userId, string accountNumber, CancellationToken cancellationToken) =>
-        await dbContext.BankAccounts.AsNoTracking()
+        await GetValidatedAccountAsync(userId, accountNumber, cancellationToken);
+
+    private async Task<AccountDetail?> GetValidatedAccountAsync(
+        string userId,
+        string accountNumber,
+        CancellationToken cancellationToken)
+    {
+        BankingRules.ValidateAccountNumber(accountNumber, "Số tài khoản");
+        return await dbContext.BankAccounts.AsNoTracking()
             .Where(x => x.CustomerProfile.UserId == userId && x.AccountNumber == accountNumber)
             .Select(x => new AccountDetail(x.AccountNumber, x.Balance, x.Currency, x.Status.ToString(), x.CustomerProfile.FullName))
             .SingleOrDefaultAsync(cancellationToken);
+    }
 
-    public async Task<ResolvedAccount?> ResolveAccountAsync(string accountNumber, CancellationToken cancellationToken) =>
-        await dbContext.BankAccounts.AsNoTracking()
+    public async Task<ResolvedAccount?> ResolveAccountAsync(string accountNumber, CancellationToken cancellationToken)
+    {
+        BankingRules.ValidateAccountNumber(accountNumber, "Số tài khoản");
+        return await dbContext.BankAccounts.AsNoTracking()
             .Where(x => x.AccountNumber == accountNumber)
             .Select(x => new ResolvedAccount(x.AccountNumber, MaskName(x.CustomerProfile.FullName), x.Status.ToString()))
             .SingleOrDefaultAsync(cancellationToken);
+    }
 
     public async Task<IReadOnlyList<TransactionSummary>> GetTransactionsAsync(string userId, string accountNumber, CancellationToken cancellationToken)
     {
+        BankingRules.ValidateAccountNumber(accountNumber, "Số tài khoản");
         await EnsureOwnedAccountAsync(userId, accountNumber, cancellationToken);
         return await dbContext.FinancialTransactions.AsNoTracking()
             .Where(x => x.SourceAccount!.AccountNumber == accountNumber || x.DestinationAccount.AccountNumber == accountNumber)
-            .OrderByDescending(x => x.CreatedAtUtc).Take(100)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .Take(100)
             .Select(x => new TransactionSummary(x.ReferenceNo, x.Type.ToString(), x.Amount,
                 x.SourceAccount == null ? null : x.SourceAccount.AccountNumber, x.DestinationAccount.AccountNumber,
                 x.Description, x.CreatedAtUtc))
@@ -63,9 +85,44 @@ public sealed class BankingService(
 
     public async Task<TransferResponse> TransferAsync(string userId, string idempotencyKey, TransferRequest request, CancellationToken cancellationToken)
     {
+        try
+        {
+            return await TransferCoreAsync(userId, idempotencyKey, request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is BusinessRuleException or NotFoundException or AuthenticationException or ConflictException)
+        {
+            var action = exception is TransactionPasswordRejectedException
+                ? "TRANSACTION_PASSWORD_FAILED"
+                : "TRANSFER_FAILED";
+            await TryAuditFailureAsync(userId, action);
+
+            throw;
+        }
+    }
+
+    private async Task<TransferResponse> TransferCoreAsync(
+        string userId,
+        string idempotencyKey,
+        TransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null) throw new BusinessRuleException("Dữ liệu chuyển tiền không hợp lệ.");
+
         BankingRules.ValidateIdempotencyKey(idempotencyKey);
+        BankingRules.ValidateAccountNumber(request.SourceAccountNumber, "Tài khoản nguồn");
+        BankingRules.ValidateAccountNumber(request.DestinationAccountNumber, "Tài khoản nhận");
         BankingRules.ValidateAmount(request.Amount);
+        BankingRules.ValidateTransactionPassword(request.TransactionPassword);
         var description = BankingRules.NormalizeDescription(request.Description);
+        var user = await userManager.FindByIdAsync(userId)
+            ?? throw new AuthenticationException("Người dùng không tồn tại.");
+        if (!user.IsActive || await userManager.IsLockedOutAsync(user))
+            throw new AuthenticationException("Tài khoản không thể thực hiện giao dịch.");
+
         var requestHash = Hash(FormattableString.Invariant(
             $"{request.SourceAccountNumber}|{request.DestinationAccountNumber}|{request.Amount:0.00}|{description}"));
         var replay = await IdempotencyReplay.FindMatchingAsync(
@@ -77,24 +134,9 @@ public sealed class BankingService(
 
         if (request.SourceAccountNumber == request.DestinationAccountNumber)
             throw new BusinessRuleException("Tài khoản nguồn và tài khoản nhận phải khác nhau.");
-        var user = await userManager.FindByIdAsync(userId) ?? throw new AuthenticationException("Người dùng không tồn tại.");
-        if (!user.IsActive || await userManager.IsLockedOutAsync(user))
-            throw new AuthenticationException("Tài khoản không thể thực hiện giao dịch.");
         if (user.TransactionPasswordHash is null ||
             passwordHasher.VerifyHashedPassword(user, user.TransactionPasswordHash, request.TransactionPassword) == PasswordVerificationResult.Failed)
-        {
-            await userManager.AccessFailedAsync(user);
-            if (await userManager.IsLockedOutAsync(user))
-            {
-                user.LockedAtUtc = DateTimeOffset.UtcNow;
-                await userManager.UpdateAsync(user);
-                dbContext.AuditLogs.Add(new AuditLog { UserId = userId, Action = "USER_LOCKED", Result = AuditResult.Success, CreatedAtUtc = DateTimeOffset.UtcNow });
-            }
-            dbContext.AuditLogs.Add(new AuditLog { UserId = userId, Action = "TRANSACTION_PASSWORD_FAILED", Result = AuditResult.Failure, CreatedAtUtc = DateTimeOffset.UtcNow });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            throw new AuthenticationException("Mật khẩu giao dịch không đúng.");
-        }
-        await userManager.ResetAccessFailedCountAsync(user);
+            throw new TransactionPasswordRejectedException();
 
         BankAccount source;
         BankAccount destination;
@@ -121,9 +163,16 @@ public sealed class BankingService(
             now = DateTimeOffset.UtcNow;
             item = new FinancialTransaction
             {
-                ReferenceNo = NewReference("TRF"), SourceAccountId = source.Id, DestinationAccountId = destination.Id,
-                CreatedByUserId = userId, Type = TransactionType.Transfer, Amount = request.Amount,
-                Description = description, IdempotencyKey = idempotencyKey, RequestHash = requestHash, CreatedAtUtc = now
+                ReferenceNo = NewReference("TRF"),
+                SourceAccountId = source.Id,
+                DestinationAccountId = destination.Id,
+                CreatedByUserId = userId,
+                Type = TransactionType.Transfer,
+                Amount = request.Amount,
+                Description = description,
+                IdempotencyKey = idempotencyKey,
+                RequestHash = requestHash,
+                CreatedAtUtc = now
             };
             dbContext.FinancialTransactions.Add(item);
             dbContext.AuditLogs.Add(new AuditLog { UserId = userId, Action = "TRANSFER", EntityType = "FinancialTransaction", EntityId = item.ReferenceNo, Result = AuditResult.Success, CreatedAtUtc = now });
@@ -151,7 +200,10 @@ public sealed class BankingService(
 
             if (persistenceFailure is DbUpdateConcurrencyException)
                 throw new ConflictException("Số dư vừa thay đổi. Vui lòng kiểm tra và thử lại.");
-            throw new ConflictException("Yêu cầu bị trùng hoặc dữ liệu vừa thay đổi.");
+            if (IdempotencyReplay.IsUniqueConstraintViolation(persistenceFailure))
+                throw new ConflictException("Yêu cầu bị trùng hoặc dữ liệu vừa thay đổi.");
+
+            throw new DependencyUnavailableException("Dịch vụ dữ liệu tạm thời không khả dụng.", persistenceFailure);
         }
 
         await NotifyTransactionAsync(source.CustomerProfile.UserId, source.AccountNumber,
@@ -166,6 +218,26 @@ public sealed class BankingService(
         await realtimeNotifier.TransactionReceivedAsync(sourceUserId, referenceNo, sourceAccountNumber, CancellationToken.None);
         await realtimeNotifier.BalanceChangedAsync(destinationUserId, destinationAccountNumber, CancellationToken.None);
         await realtimeNotifier.TransactionReceivedAsync(destinationUserId, referenceNo, destinationAccountNumber, CancellationToken.None);
+    }
+
+    private async Task TryAuditFailureAsync(string userId, string action)
+    {
+        try
+        {
+            dbContext.ChangeTracker.Clear();
+            dbContext.AuditLogs.Add(new AuditLog
+            {
+                UserId = userId,
+                Action = action,
+                Result = AuditResult.Failure,
+                CreatedAtUtc = DateTimeOffset.UtcNow
+            });
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Không thể ghi audit cho nghiệp vụ thất bại {AuditAction}", action);
+        }
     }
 
     private async Task EnsureOwnedAccountAsync(string userId, string accountNumber, CancellationToken cancellationToken)
@@ -195,4 +267,7 @@ public sealed class BankingService(
         var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return string.Join(' ', parts.Select(x => x.Length < 2 ? x : $"{x[0]}{new string('*', x.Length - 1)}"));
     }
+
+    private sealed class TransactionPasswordRejectedException()
+        : AuthenticationException("Mật khẩu giao dịch không đúng.");
 }

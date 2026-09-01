@@ -92,12 +92,12 @@ public sealed class RealtimeService(ApiSession session, HttpClient httpClient, N
                 })
             .WithAutomaticReconnect()
             .Build();
-        nextConnection.On("ForceLogout", () =>
+        nextConnection.On("ForceLogout", async () =>
         {
             if (!IsCurrentConnection(nextConnection, generation)) return;
+            if (!await session.EndFromServerAsync(generation)) return;
 
             LastMessage = "Tài khoản đã đăng nhập ở nơi khác. Phiên này đã kết thúc.";
-            session.EndFromServer();
             NotifyMessageChanged();
             navigation.NavigateTo("/login?reason=session-replaced");
         });

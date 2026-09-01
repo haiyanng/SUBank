@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -21,9 +21,9 @@
         <div class="loading-progress-text"></div>
     </div>
     <div id="blazor-error-ui">
-        An unhandled error has occurred.
-        <a href="." class="reload">Reload</a>
-        <span class="dismiss">&#10006;</span>
+        Đã xảy ra lỗi không mong muốn.
+        <a href="." class="reload">Tải lại</a>
+        <span class="dismiss" title="Đóng">&#10006;</span>
     </div>
     <script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script>
     <script>
@@ -33,6 +33,341 @@
             link.href = `data:${contentType};base64,${base64}`;
             link.click();
         };
+        window.subankSession = (() => {
+            const logoutKey = 'subank_logout_pending';
+            const tabSessionKey = 'subank_tab_session_id';
+            const authCookieLockName = 'subank-auth-cookie-http';
+            const lockWaitMilliseconds = 45000;
+            const requestTimeoutMilliseconds = 30000;
+            const compensationTimeoutMilliseconds = 5000;
+            const logoutIntentLifetimeMilliseconds = 32 * 24 * 60 * 60 * 1000;
+            const channel = 'BroadcastChannel' in window ? new BroadcastChannel('subank-session') : null;
+            let unsubscribe = null;
+
+            const readShared = (key) => localStorage.getItem(key);
+            const writeShared = (key, value) => {
+                try {
+                    localStorage.setItem(key, value);
+                    return readShared(key) === value;
+                } catch {
+                    return false;
+                }
+            };
+            const removeShared = (key) => {
+                try {
+                    localStorage.removeItem(key);
+                    return readShared(key) === null;
+                } catch {
+                    return false;
+                }
+            };
+            const publishChange = () => channel?.postMessage('session-state-changed');
+            const blockUnknownSession = () => {
+                const stored = writeShared(logoutKey, JSON.stringify({ blockedAll: true }));
+                if (stored) publishChange();
+                return stored;
+            };
+            const readLogoutState = () => {
+                try {
+                    const raw = readShared(logoutKey);
+                    if (raw === null) return { valid: true, intents: [] };
+                    const parsed = JSON.parse(raw);
+                    if (!Array.isArray(parsed)) return { valid: false, intents: [] };
+                    if (!parsed.every(item => typeof item?.sessionId === 'string' &&
+                        /^[0-9a-f]{32}$/.test(item.sessionId) &&
+                        Number.isFinite(item?.expiresAt)))
+                        return { valid: false, intents: [] };
+                    return {
+                        valid: true,
+                        intents: parsed.filter(item => item.expiresAt > Date.now())
+                    };
+                } catch {
+                    try {
+                        const raw = readShared(logoutKey);
+                        return /^[0-9a-f]{32}$/.test(raw ?? '')
+                            ? {
+                                valid: true,
+                                intents: [{
+                                    sessionId: raw,
+                                    expiresAt: Date.now() + logoutIntentLifetimeMilliseconds
+                                }]
+                            }
+                            : { valid: false, intents: [] };
+                    } catch {
+                        return { valid: false, intents: [] };
+                    }
+                }
+            };
+            const writeLogoutIntents = (intents) => intents.length === 0
+                ? removeShared(logoutKey)
+                : writeShared(logoutKey, JSON.stringify(intents));
+            const addLogoutIntent = (sessionId) => {
+                if (typeof sessionId !== 'string' || !/^[0-9a-f]{32}$/.test(sessionId)) return false;
+                const state = readLogoutState();
+                if (!state.valid) return false;
+                const intents = state.intents.filter(item => item.sessionId !== sessionId);
+                intents.push({
+                    sessionId,
+                    expiresAt: Date.now() + logoutIntentLifetimeMilliseconds
+                });
+                const stored = writeLogoutIntents(intents);
+                if (stored) publishChange();
+                return stored;
+            };
+            const readTabSessionId = () => {
+                return sessionStorage.getItem(tabSessionKey);
+            };
+            const isValidAuthResponseBody = (body, expectedSessionId) => {
+                try {
+                    const value = JSON.parse(body);
+                    return value !== null && typeof value === 'object' &&
+                        typeof value.accessToken === 'string' && value.accessToken.trim().length > 0 &&
+                        typeof value.sessionId === 'string' &&
+                        value.sessionId === expectedSessionId &&
+                        /^[0-9a-f]{32}$/.test(value.sessionId) &&
+                        Number.isSafeInteger(value.expiresInMilliseconds) &&
+                        value.expiresInMilliseconds >= 0 && value.expiresInMilliseconds <= 3600000 &&
+                        typeof value.expiresAtUtc === 'string' &&
+                        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,16})?(?:Z|[+-]\d{2}:\d{2})$/.test(value.expiresAtUtc) &&
+                        Number.isFinite(Date.parse(value.expiresAtUtc)) &&
+                        value.user !== null && typeof value.user === 'object' &&
+                        typeof value.user.userName === 'string' && value.user.userName.trim().length > 0 &&
+                        Array.isArray(value.user.roles) &&
+                        value.user.roles.every(role => typeof role === 'string');
+                } catch {
+                    return false;
+                }
+            };
+            const compensateInvalidAuthResponse = async (requestUrl, sessionId) => {
+                if (typeof sessionId !== 'string' || !/^[0-9a-f]{32}$/.test(sessionId))
+                    return { browserBlocked: blockUnknownSession(), serverRevoked: false };
+
+                const browserBlocked = addLogoutIntent(sessionId);
+                const compensationAbort = new AbortController();
+                const compensationTimer = setTimeout(
+                    () => compensationAbort.abort(),
+                    compensationTimeoutMilliseconds);
+                try {
+                    const response = await fetch(new URL('logout', requestUrl), {
+                        method: 'POST',
+                        headers: {
+                            'X-SUBank-CSRF': '1',
+                            'X-SUBank-Session-ID': sessionId
+                        },
+                        credentials: 'include',
+                        cache: 'no-store',
+                        redirect: 'error',
+                        signal: compensationAbort.signal
+                    });
+                    return {
+                        browserBlocked,
+                        serverRevoked: response.ok &&
+                            response.headers.get('X-SUBank-Session-Revoked') === '1'
+                    };
+                } catch {
+                    return { browserBlocked, serverRevoked: false };
+                } finally {
+                    clearTimeout(compensationTimer);
+                }
+            };
+            const sendCookieRequest = async (type, url, method, headers, body, logoutSessionId) => {
+                if (!('locks' in navigator))
+                    return { status: 0, error: 'web-locks-unavailable' };
+
+                const lockAbort = new AbortController();
+                const lockTimer = setTimeout(() => lockAbort.abort(), lockWaitMilliseconds);
+                let lockAcquired = false;
+                try {
+                    return await navigator.locks.request(
+                        authCookieLockName,
+                        { signal: lockAbort.signal },
+                        async () => {
+                            lockAcquired = true;
+                            clearTimeout(lockTimer);
+                            if (type === 'login' && !readLogoutState().valid &&
+                                !writeLogoutIntents([]))
+                                return { status: 0, error: 'coordination-storage-unavailable' };
+                            if (type === 'logout' && !addLogoutIntent(logoutSessionId))
+                                return { status: 0, error: 'coordination-storage-unavailable' };
+
+                            const requestAbort = new AbortController();
+                            const requestTimer = setTimeout(
+                                () => requestAbort.abort(),
+                                requestTimeoutMilliseconds);
+                            try {
+                                const response = await fetch(url, {
+                                    method,
+                                    headers: headers ?? {},
+                                    body: body ?? undefined,
+                                    credentials: 'include',
+                                    cache: 'no-store',
+                                    redirect: 'error',
+                                    signal: requestAbort.signal
+                                });
+                                const result = {
+                                    status: response.status,
+                                    contentType: response.headers.get('Content-Type'),
+                                    wwwAuthenticate: response.headers.get('WWW-Authenticate'),
+                                    correlationId: response.headers.get('X-Correlation-ID'),
+                                    sessionId: response.headers.get('X-SUBank-Session-ID'),
+                                    refreshCookieCleared: response.headers.get('X-SUBank-Refresh-Cookie-Cleared'),
+                                    sessionRevoked: response.headers.get('X-SUBank-Session-Revoked')
+                                };
+                                try {
+                                    result.body = await response.text();
+                                    if (type === 'login' && response.ok &&
+                                        !isValidAuthResponseBody(result.body, result.sessionId)) {
+                                        clearTimeout(requestTimer);
+                                        let bodySessionId = null;
+                                        try {
+                                            const parsedBody = JSON.parse(result.body);
+                                            if (/^[0-9a-f]{32}$/.test(parsedBody?.sessionId ?? ''))
+                                                bodySessionId = parsedBody.sessionId;
+                                        } catch { }
+
+                                        const headerSessionId = /^[0-9a-f]{32}$/.test(result.sessionId ?? '')
+                                            ? result.sessionId
+                                            : null;
+                                        if (headerSessionId !== null && bodySessionId !== null &&
+                                            headerSessionId !== bodySessionId) {
+                                            blockUnknownSession();
+                                            const headerCompensation = await compensateInvalidAuthResponse(
+                                                url,
+                                                headerSessionId);
+                                            const bodyCompensation = await compensateInvalidAuthResponse(
+                                                url,
+                                                bodySessionId);
+                                            return {
+                                                status: 0,
+                                                sessionId: result.sessionId,
+                                                error: headerCompensation.serverRevoked || bodyCompensation.serverRevoked
+                                                    ? 'auth-session-mismatch-revoked'
+                                                    : 'auth-session-mismatch-unconfirmed'
+                                            };
+                                        }
+
+                                        const compensation = await compensateInvalidAuthResponse(
+                                            url,
+                                            headerSessionId ?? bodySessionId);
+                                        return {
+                                            status: 0,
+                                            sessionId: result.sessionId,
+                                            error: compensation.serverRevoked
+                                                ? 'auth-response-invalid-revoked'
+                                                : 'auth-response-invalid-unconfirmed'
+                                        };
+                                    }
+                                    return result;
+                                } catch (error) {
+                                    clearTimeout(requestTimer);
+                                    if (type === 'logout' && result.sessionRevoked === '1')
+                                        return { ...result, body: '' };
+                                    if (type === 'login' && response.ok) {
+                                        const compensation = await compensateInvalidAuthResponse(url, result.sessionId);
+                                        return {
+                                            status: 0,
+                                            sessionId: result.sessionId,
+                                            error: compensation.serverRevoked
+                                                ? 'login-response-unreadable-revoked'
+                                                : 'login-response-unreadable-unconfirmed'
+                                        };
+                                    }
+                                    return {
+                                        status: 0,
+                                        sessionId: result.sessionId,
+                                        error: error?.name === 'AbortError'
+                                            ? 'request-timeout'
+                                            : 'response-body-error'
+                                    };
+                                }
+                            } finally {
+                                clearTimeout(requestTimer);
+                            }
+                        });
+                } catch (error) {
+                    return {
+                        status: 0,
+                        error: error?.name === 'AbortError'
+                            ? (lockAcquired ? 'request-timeout' : 'coordination-timeout')
+                            : 'network-error'
+                    };
+                } finally {
+                    clearTimeout(lockTimer);
+                }
+            };
+            const blockSession = async (sessionId) => {
+                if (!('locks' in navigator)) return false;
+
+                const lockAbort = new AbortController();
+                const lockTimer = setTimeout(() => lockAbort.abort(), lockWaitMilliseconds);
+                try {
+                    return await navigator.locks.request(
+                        authCookieLockName,
+                        { signal: lockAbort.signal },
+                        () => addLogoutIntent(sessionId));
+                } catch {
+                    return false;
+                } finally {
+                    clearTimeout(lockTimer);
+                }
+            };
+
+            return {
+                subscribe: (dotNetReference) => {
+                    unsubscribe?.();
+                    let notificationPending = false;
+                    let notificationDirty = false;
+                    const notify = () => {
+                        notificationDirty = true;
+                        if (notificationPending) return;
+                        notificationPending = true;
+                        const drain = async () => {
+                            do {
+                                notificationDirty = false;
+                                try { await dotNetReference.invokeMethodAsync('OnBrowserSessionSignalAsync'); } catch { }
+                            } while (notificationDirty);
+                            notificationPending = false;
+                        };
+                        void drain();
+                    };
+                    const onVisibilityChange = () => {
+                        if (document.visibilityState === 'visible') notify();
+                    };
+                    const onStorage = (event) => {
+                        if (event.key === logoutKey) notify();
+                    };
+                    const onChannelMessage = () => notify();
+
+                    document.addEventListener('visibilitychange', onVisibilityChange);
+                    window.addEventListener('focus', notify);
+                    window.addEventListener('pageshow', notify);
+                    window.addEventListener('storage', onStorage);
+                    channel?.addEventListener('message', onChannelMessage);
+                    unsubscribe = () => {
+                        document.removeEventListener('visibilitychange', onVisibilityChange);
+                        window.removeEventListener('focus', notify);
+                        window.removeEventListener('pageshow', notify);
+                        window.removeEventListener('storage', onStorage);
+                        channel?.removeEventListener('message', onChannelMessage);
+                        unsubscribe = null;
+                    };
+                },
+                unsubscribe: () => unsubscribe?.(),
+                isLogoutPending: (sessionId) => {
+                    const state = readLogoutState();
+                    return !state.valid || (typeof sessionId === 'string' &&
+                        state.intents.some(item => item.sessionId === sessionId));
+                },
+                blockSession,
+                sendCookieRequest,
+                getTabSessionId: readTabSessionId,
+                setTabSessionId: (sessionId) => {
+                    sessionStorage.setItem(tabSessionKey, sessionId);
+                    if (readTabSessionId() !== sessionId)
+                        throw new Error('Unable to persist tab session binding.');
+                }
+            };
+        })();
         window.subankCamera = {
             start: async (id) => {
                 const video = document.getElementById(id);

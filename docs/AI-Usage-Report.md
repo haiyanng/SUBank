@@ -326,6 +326,7 @@
 - Kết quả: Customer A dùng `0900000001` và Customer B dùng `0900000002` đồng thời cho phone, username và primary account. Seed đổi username/tài khoản cũ tại chỗ, giữ `UserId`, `BankAccount.Id`, balance và foreign key transaction; account phụ chỉ được thêm khi còn thiếu. User legacy mồ côi do lần seed lỗi được vô hiệu hóa.
 - Vấn đề còn lại: thay đổi đang nằm trên working tree của `develop` vì môi trường trước đó từ chối quyền tạo branch; cần chuyển sang branch sửa lỗi trước khi commit. Stash AI vẫn được giữ nguyên và không tham gia thay đổi này.
 - Con người review: CHỜ XÁC NHẬN
+
 - Kinh nghiệm rút ra: tài liệu seed và code seed phải được kiểm tra cùng nhau sau khi merge các feature phụ thuộc; đổi số tài khoản bằng cách cập nhật bản ghi hiện hữu sẽ giữ toàn bộ lịch sử vì transaction tham chiếu khóa nội bộ thay vì chuỗi account number.
 
 ## Entry 026 - Bổ sung tài khoản phụ và ưu tiên thao tác QR
@@ -497,6 +498,34 @@
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: refresh token rotation biến một token thành chuỗi, nhưng `SessionId` mới là ranh giới phiên. Logout phải nhắm vào logical session và dùng cùng khóa với refresh; thu hồi riêng cookie token không đủ bảo đảm.
 
+## Entry 039 - Đồng nhất snapshot sao kê
+
+- Ngày: 2026-08-29
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa lỗi khó R17 về số dư đầu/cuối kỳ và danh sách giao dịch có thể được ghép từ nhiều trạng thái database khác nhau.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tiếp tục sửa lỗi khó, chưa làm các lỗi dễ và chưa đụng QR. AI đối chiếu công thức opening/closing, transaction boundary của transfer/cash deposit, SQL Server isolation và rủi ro deadlock; chọn cửa sổ đọc `RepeatableRead` thay vì yêu cầu bật `Snapshot` ở runtime.
+- File/module bị tác động: `StatementService.cs`; `Architecture.md`, `PROJECT-BLUEPRINT.md`, `Database-Design.md`, `Issue-Register.md` và báo cáo này. Không đổi schema, API contract, package, Client, test hoặc phần QR.
+- Kiểm chứng đã thực hiện: build Release toàn solution thành công với 0 warning, 0 error; rà soát diff. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Kết quả: service đọc account trước trong một transaction ngắn, sau đó chốt `asOfUtc` và áp cùng cận trên cho movement dùng tính opening lẫn rows trong kỳ. Thứ tự rows ổn định theo thời gian rồi `Id`; transaction kết thúc trước khi map DTO/render PDF; SQL deadlock 1205 được retry một lần và lỗi lặp lại được map thành conflict an toàn.
+- Vấn đề còn lại: chưa chạy test cạnh tranh giữa statement với transfer/deposit trên SQL Server thật. `RepeatableRead` dựa trên invariant mọi money movement phải cập nhật account và ledger trong cùng transaction, đồng thời có thể chặn writer cùng account trong thời gian ngắn. Quy tắc kỳ tương lai chưa thay đổi vì ngoài phạm vi R17.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: nhiều query có cùng filter thời gian chưa tạo thành một snapshot. Muốn báo cáo tài chính nhất quán phải chốt cả transaction boundary, thứ tự lấy mốc thời gian và invariant của mọi writer; phần render file không được kéo dài thời gian giữ khóa database.
+
+## Entry 040 - Hoàn thiện Application Log
+
+- Ngày: 2026-08-30
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: hoàn thiện structured Application Log cho ASP.NET Core API, request logging an toàn, rolling file và correlation với SQL Audit Log.
+- Tóm tắt prompt/công việc thực tế: chủ dự án hỏi hệ thống đã có Application Log chưa, hỏi khả năng ghi file/backup rồi yêu cầu hoàn thiện. AI audit toàn bộ `ILogger`, middleware, ProblemDetails, cấu hình, `AuditLog` và môi trường chạy; phân biệt technical log với audit/ledger và không tuyên bố rolling file là backup.
+- File/module bị tác động: Application correlation abstraction; API Serilog configuration, logging options, correlation/request middleware, exception handler và appsettings; Infrastructure EF audit interceptor/DI; README, Architecture, Security Design, Blueprint, Database Design, Issue Register, tài liệu Application Logging và báo cáo này. Không thay đổi schema, API nghiệp vụ, Client, test hoặc phần QR.
+- Package thêm: `Serilog.AspNetCore` 10.0.0, `Serilog.Formatting.Compact` 3.0.0 và `Serilog.Sinks.File` 7.0.0 trong project API.
+- Kiểm chứng đã thực hiện: restore thành công; build toàn solution 0 warning/0 error; khởi động API HTTPS/HTTP; xác nhận file JSON Lines được tạo; xác nhận response header và ProblemDetails dùng correlation ID; gửi request có route value/query/body giả rồi kiểm tra request completion event chỉ còn route template. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Kết quả: console nhận structured log ở mọi môi trường; Development ghi file roll theo ngày/dung lượng với giới hạn 10 MiB, tối đa 31 file và 14 ngày; request `4xx/5xx` được phân mức; `/health` thành công ở Debug; top-level property nhạy cảm bị loại trước sink. Correlation ID được validate, đưa vào scope/response và tự điền cho audit phát sinh trong HTTP request mà không cần migration.
+- Phát hiện trong lúc triển khai: bản đầu dùng sai hằng `StatusCodes.StatusServiceUnavailable` làm build lỗi và đã đổi sang `Status503ServiceUnavailable`. Kiểm tra file thật phát hiện scope ASP.NET Core tự thêm raw `RequestPath` chứa số tài khoản dù message dùng route template; đã bổ sung enricher loại thuộc tính này và kiểm tra lại bằng một route/account/query giả. Exception-handled request từng mất endpoint thành `<unmapped>`; route template sau đó được snapshot trước khi gọi pipeline. Exception handler cũng xóa response header đã gắn sớm; middleware hiện gắn lại `X-Correlation-ID` bằng `OnStarting` và đã kiểm tra header khớp ProblemDetails.
+- Vấn đề còn lại: Redis local không chạy nên login kiểm tra trả `503`; technical log/ProblemDetails của failure path đã được kiểm chứng, nhưng chưa thực hiện một successful login để đọc lại `AuditLog.CorrelationId` qua Admin API. Rolling file không phải backup. Repo chưa có lịch backup SQL, off-site copy, restore script hoặc restore drill; được ghi thành X08 trong Issue Register.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: safe message template chưa đủ nếu logging scope/framework tự enrich raw request data; phải nhìn output sink thật. Correlation là chìa khóa nối log, không phải credential. Retention chỉ giới hạn file local, còn backup phải có bản sao độc lập và bằng chứng restore.
+
 ## Mẫu ghi nhận cho các entry tiếp theo
 
 Sao chép phần sau sau mỗi milestone có AI hỗ trợ đáng kể:
@@ -549,3 +578,173 @@ Review transfer implementation để phát hiện double-spend và duplicate-sub
 ```text
 Giải thích milestone vừa hoàn thành từ số 0: hành động của user, HTTP request, trách nhiệm của controller, Application use case, Domain rule, công việc của Infrastructure/database, response, UI state và test. Sau đó liệt kê nội dung tôi cần tự kiểm tra, lỗi phổ biến và ba câu hỏi tôi phải trả lời được khi bảo vệ dự án.
 ```
+
+## Entry 041 - Hoàn tất lượt sửa lỗi non-QR và kiểm chứng artifact
+
+- Ngày: 2026-08-31
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa các phát hiện còn lại R03–R05, R09–R12, R14, R18–R20 và X01–X08 trong phạm vi có thể xử lý tại repository; giữ QR và giai đoạn test đúng quyết định của chủ dự án.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tiếp tục và sau đó sửa toàn bộ lỗi. AI đối chiếu Issue Register với source hiện hành, chia audit cho các luồng auth/client và deployment, sửa theo dependency, build/publish rồi chạy chính artifact cùng origin. Một lượt review cuối phát hiện path publish chỉ an toàn trên Windows và Client logout xóa session dù response có thể chưa vào controller; cả hai được sửa trước khi bàn giao.
+- File/module bị tác động: auth/session/logout; Teller deposit và transfer; Client router/bootstrap/form/sao kê; database initializer và startup validation; health check; API static hosting/publish target; deployment security; line-ending policy; README, Architecture/Blueprint/Security/Database Design, Deployment, Backup-Restore Runbook và Issue Register. QR không bị thay đổi.
+- Package thêm trong toàn working tree: `Serilog.AspNetCore` 10.0.0, `Serilog.Formatting.Compact` 3.0.0 và `Serilog.Sinks.File` 7.0.0 thuộc Entry 040; lượt sửa lỗi này không thêm package khác.
+- Kiểm chứng đã thực hiện: build Release toàn solution 0 warning/0 error; format verification thành công; publish API tự restore/publish Client thành công. Artifact thực trả 200 cho `/`, `/accounts` và framework JS; API route giả trả 404 ProblemDetails; liveness 200; readiness 503 khi SQL/Redis không sẵn sàng; logout trả cookie hết hạn và marker xác nhận. Không chạy hoặc thêm test theo quyết định hiện tại.
+- Kết quả: các lỗi non-QR có thể đóng bằng code/tài liệu trong repository đã được xử lý trong working tree. Runtime Production không tự migration/seed; demo seed có allow-list; Client phân biệt no-session với outage; role route deny-by-default; health phân liveness/readiness; artifact API phục vụ Client cùng origin.
+- Vấn đề còn lại: R21 chờ giai đoạn test; X02 cần hostname/proxy/TLS thật; X08 cần backup/PITR/alert và restore drill thật. R10 không thể tái tạo dữ liệu đã mất mà chỉ có thể phục hồi từ backup. QR-01–QR-04 tiếp tục tạm hoãn. Các thay đổi chưa commit/push.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: build thành công trên Windows chưa chứng minh target MSBuild chạy trên Linux; path và restore graph phải được thiết kế đa nền tảng. Với logout, có HTTP response chưa có nghĩa request đã đi qua controller; Client chỉ được xóa state khi server trả bằng chứng theo contract.
+
+## Entry 042 - Hardening luồng authentication/session nhiều tab
+
+- Ngày: 2026-09-01
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: rà soát và khép kín auth-cookie coordination, per-tab session binding, logout confirmation/fallback, stale async response và Customer absolute session; không thay đổi QR.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tiếp tục sửa lỗi. AI audit client/server contract theo các race login/refresh/logout giữa nhiều tab; thay lease TTL bằng Web Lock giữ xuyên `fetch` và response body; thêm compensation khi browser đã nhận cookie nhưng response login không hợp lệ; khóa stale `ForceLogout`/request bằng generation; sau đó publish và smoke-test artifact thực.
+- Quyết định kỹ thuật: access token vẫn chỉ ở .NET/WASM memory; refresh token vẫn chỉ ở HttpOnly `Secure` cookie. `sessionStorage` chỉ giữ SID theo tab, `localStorage` chỉ giữ logout intent không phải credential. Không dùng `history.state`/JavaScript cookie fallback. Storage/Web Locks không khả dụng hoặc dữ liệu malformed thì fail closed.
+- Xử lý response login: JavaScript kiểm tra access token không rỗng, Guid N lowercase, expiry và user/roles ngay trong Web Lock. Body không đọc được/sai schema sẽ block SID và gọi cookie logout bù trừ; không xác định được SID thì block toàn bộ restore. Header/body có hai SID canonical khác nhau thì block toàn bộ restore và thử thu hồi cả hai trước khi nhả Web Lock.
+- Xử lý logout: UI/session bị block ngay; cookie logout chỉ thành công khi có `X-SUBank-Session-Revoked: 1`. Thiếu marker/status lỗi/network failure sẽ thử `reject-session` bằng bearer cũ với `credentials: omit`, không mutate cookie của session mới.
+- File/module bị tác động trong lượt hardening: `ApiSession.cs`, `RealtimeService.cs`, `index.html`, `AuthController.cs`, `RefreshCookieProtectionMiddleware.cs`, CORS/API startup và tài liệu README/Architecture/Blueprint/Security/Issue Register. Working tree còn chứa các thay đổi non-QR của các entry trước.
+- Package: không thêm package mới trong lượt hardening này.
+- Kiểm chứng: inline JavaScript parse thành công; format verification thành công; build Release toàn solution 0 warning/0 error; publish artifact Release thành công. Artifact trả 200 cho `/`, `/accounts`, framework JavaScript, Swagger và liveness; readiness 503 đúng vì sandbox không có SQL/Redis. Logout không cookie/bearer trả 204, xóa cookie nhưng không trả sai marker thu hồi. Không chạy hoặc thêm test theo quyết định hiện tại.
+- Vấn đề còn lại: R21 chờ browser/multi-tab/network-failure/SQL-Redis concurrency test; X02 cần TLS/proxy/hostname thật; X08 cần backup/PITR và restore drill thật; QR-01–QR-04 tiếp tục tạm hoãn. Web Locks/`sessionStorage`/`localStorage` là dependency của browser trong phạm vi demo; quota logout-intent và outcome ambiguity khi browser abort là residual availability cần bằng chứng môi trường.
+- Kinh nghiệm rút ra: serialize đến khi `fetch` trả header là chưa đủ; phải giữ khóa qua cả body/validation vì cookie có thể đã được browser nhận. Browser abort chỉ là tín hiệu Client, không phải rollback phía server; backend vẫn cần state machine và transaction nguyên tử.
+- Con người review: CHỜ XÁC NHẬN
+
+## Entry 043 - Sửa lỗi non-QR theo phạm vi rút gọn
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: sửa các lỗi ngoài QR ảnh hưởng trực tiếp đến demo, an toàn trạng thái phiên, tính đúng của giao dịch/audit và hiển thị dữ liệu.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu tiếp tục nhưng không làm quá phức tạp. AI dừng việc mở rộng rà soát, sửa phần code đang dở để build lại, sau đó chỉ xử lý request cancellation, phân loại lỗi SQL, audit/correlation, xóa UI ngay khi logout/hết hạn và một số lỗi giao diện rõ ràng.
+- File/module bị tác động chính: `BankingService`, `StaffService`, `IdempotencyReplay`, exception/request logging middleware, `ApiSession`, Login/NavMenu, lịch sử/chi tiết giao dịch, tài khoản, sao kê/PDF và Admin Audit Log.
+- Package: không thêm package mới.
+- Kiểm chứng: format thành công; build Release toàn solution thành công với 0 warning, 0 error; không chạy test theo quyết định hiện tại.
+- Kết quả: solution trở lại trạng thái build xanh; lỗi kỹ thuật không còn bị ghi nhầm là thất bại nghiệp vụ; dữ liệu riêng tư được ẩn ngay khi phiên kết thúc; tiền và thời gian hiển thị nhất quán hơn.
+- Vấn đề còn lại: R21 và kiểm thử trình duyệt/môi trường vẫn tạm hoãn; các vấn đề phụ thuộc host/backup giữ nguyên; QR hoàn toàn ngoài phạm vi lượt này. Thay đổi chưa commit/push.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: với đồ án demo cần ưu tiên lỗi có tác động thực tế và giữ phạm vi vừa đủ; không biến mọi residual risk thành một hệ thống production phức tạp.
+
+## Entry 044 - Hoàn thiện lịch sử giao dịch và sửa lỗi nhập số tiền
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: hoàn thiện lịch sử giao dịch Customer và xử lý fatal error xuất hiện khi nhập số tiền.
+- Tóm tắt prompt/công việc thực tế: API log xác nhận lỗi nhập tiền xảy ra trước `POST /api/transfers`. AI thay validation decimal phụ thuộc chuyển đổi runtime bằng kiểm tra trực tiếp, bảo vệ toàn bộ phần chuẩn hóa form; sau đó tái sử dụng API lịch sử hiện có để xây trang chọn tài khoản, tìm kiếm, lọc tiền vào/ra, mở chi tiết và cập nhật sau giao dịch.
+- File/module bị tác động chính: `Transfer.razor`, `StaffDeposit.razor`, `Transactions.razor`, `TransactionDetail.razor`, `Accounts.razor`, `NavMenu.razor`, `ApiSession.cs`, `app.css`, Issue Register và báo cáo này.
+- Package: không thêm package mới; không thay đổi API/database và không sửa chức năng QR.
+- Kiểm chứng: build Release toàn solution thành công với 0 warning, 0 error; Client/API trả HTTP 200; không chạy test theo quyết định hiện tại.
+- Kết quả: lịch sử hỗ trợ giao dịch gần đây, chọn tài khoản, tìm theo mã/nội dung/tài khoản, lọc nhanh, mở chi tiết và reload qua response thành công hoặc SignalR; không có khối tổng thu chi.
+- Vấn đề còn lại: cần chủ dự án hard-refresh và xác nhận lỗi nhập số tiền không còn trên trình duyệt thật; các phạm vi test/deploy/backup và QR giữ nguyên.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: với Blazor WASM, validation tiền nên dùng phép so sánh `decimal` rõ ràng và server vẫn là biên có thẩm quyền; chức năng lịch sử nhỏ có thể lọc client-side trên tập 100 bản ghi mà không cần mở rộng backend.
+
+## Entry 045 - Đổi nhãn và thêm lối tắt Thông tin cá nhân
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: đổi thuật ngữ giao diện Customer từ “Thông tin khách hàng” sang “Thông tin cá nhân” và thêm nút truy cập nhanh trên trang chủ.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu đổi nhãn và thêm nút ở khu vực thao tác nền trắng. AI chỉ sửa text/UI, giữ nguyên API và dữ liệu hồ sơ.
+- File/module bị tác động: `NavMenu.razor`, `Profile.razor`, `Accounts.razor`, `app.css` và báo cáo này.
+- Package: không thêm package.
+- Kiểm chứng: build Client Release thành công 0 warning/0 error; Client và API health cùng trả HTTP 200; không chạy test.
+- Kết quả: menu và trang hồ sơ dùng “Thông tin cá nhân”; trang chủ có quick action cùng style vàng nhạt dẫn đến `/profile`.
+- Vấn đề còn lại: cần chủ dự án hard-refresh để xác nhận bố cục 5 nút trên trình duyệt thật; thay đổi chưa commit/push.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: thay đổi thuật ngữ UI không cần đổi contract/domain nếu ý nghĩa dữ liệu không đổi.
+
+## Entry 046 - Chọn tài khoản khi tạo QR nhận tiền
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: bổ sung danh sách chọn tài khoản nhận tiền trong luồng tạo QR của Customer.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu phần tài khoản trong “Tạo QR nhận tiền” cho phép chọn một trong các tài khoản của Customer. AI rà soát toàn bộ đường đi từ Client đến API và xác nhận contract/backend đã hỗ trợ đúng số tài khoản nên chỉ sửa giao diện.
+- File/module bị tác động: `QrTransfer.razor` và báo cáo này.
+- Package: không thêm package.
+- Kiểm chứng: build Client Release thành công 0 warning/0 error; Client và API health cùng trả HTTP 200; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: dropdown chỉ hiển thị tài khoản đang hoạt động, ưu tiên tài khoản truyền từ trang chủ rồi đến tài khoản chính; đổi lựa chọn sẽ xóa QR cũ để tránh nhầm tài khoản nhận.
+- Vấn đề còn lại: thay đổi chưa commit/push và cần chủ dự án xác nhận trực quan trên trình duyệt.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: khi dữ liệu đích đã nằm trong request và được backend kiểm tra quyền sở hữu, thêm lựa chọn tài khoản chỉ cần quản lý trạng thái UI; không nên mở rộng API không cần thiết.
+
+## Entry 047 - Rút gọn nhãn tài khoản trong dropdown QR
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: rút gọn nội dung từng lựa chọn tài khoản khi tạo QR nhận tiền.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu bỏ chữ “Tài khoản chính” và “Tài khoản phụ”. AI giữ lại số tài khoản, số dư và loại tiền để người dùng vẫn phân biệt được các lựa chọn.
+- File/module bị tác động: `QrTransfer.razor` và báo cáo này.
+- Package: không thêm package.
+- Kiểm chứng: thay đổi chỉ tác động text hiển thị; build Client được thực hiện ngay sau thay đổi; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: dropdown QR không còn nhãn tài khoản chính/phụ; logic lựa chọn và kiểm tra tài khoản không đổi.
+- Vấn đề còn lại: thay đổi chưa commit/push và cần chủ dự án xác nhận trực quan.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: dropdown nhiều tài khoản có thể dùng số tài khoản và số dư làm thông tin phân biệt mà không cần thêm nhãn loại tài khoản.
+
+## Entry 048 - Bỏ tiêu đề phụ tại thanh đầu trang
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: xóa hai dòng “SUBank Digital Banking” và “Không gian giao dịch an toàn” khỏi layout sau đăng nhập.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu bỏ hai dòng chữ trên thanh đầu trang. AI đồng thời xóa CSS không còn sử dụng và giữ trạng thái “Kết nối an toàn” căn phải.
+- File/module bị tác động: `MainLayout.razor`, `MainLayout.razor.css` và báo cáo này.
+- Package: không thêm package.
+- Kiểm chứng: build Client được thực hiện ngay sau thay đổi; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: hai dòng chữ đã được loại bỏ, thanh đầu trang không còn khoảng UI rỗng và nhãn kết nối vẫn giữ đúng vị trí.
+- Vấn đề còn lại: thay đổi chưa commit/push và cần chủ dự án xác nhận trực quan.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: khi xóa markup cần xóa selector CSS chỉ phục vụ markup đó để tránh style mồ côi hoặc vô tình áp dụng lên phần tử kế tiếp.
+
+## Entry 049 - Xóa toàn bộ thanh trạng thái tĩnh
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: xóa nhãn “Kết nối an toàn” cùng toàn bộ thanh header và đường phân cách chứa nhãn này.
+- Tóm tắt prompt/công việc thực tế: sau khi xác định nhãn kết nối chỉ là text tĩnh và có thể gây hiểu nhầm, chủ dự án yêu cầu bỏ cả nhãn lẫn vùng giao diện chứa nó.
+- File/module bị tác động: `MainLayout.razor`, `MainLayout.razor.css` và báo cáo này.
+- Package: không thêm package.
+- Kiểm chứng: build Client được thực hiện ngay sau thay đổi; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: nội dung trang bắt đầu trực tiếp trong workspace, không còn thanh trắng, khoảng trống hoặc đường viền phân cách phía trên.
+- Vấn đề còn lại: thay đổi chưa commit/push và cần chủ dự án xác nhận trực quan.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: không nên hiển thị trạng thái bảo mật hoặc kết nối nếu giao diện đó không được liên kết với tín hiệu trạng thái thật của hệ thống.
+
+## Entry 050 - Mở rộng trang Quản lý người dùng
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: đổi trang “Người dùng bị khóa” thành “Quản lý người dùng” với bộ lọc Tất cả, Hoạt động và Bị khóa.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu Admin xem được toàn bộ người dùng thay vì chỉ danh sách bị khóa. AI bổ sung contract/API danh sách người dùng, truy vấn role và trạng thái từ ASP.NET Core Identity, rồi lọc ba trạng thái trên Client; endpoint cũ vẫn được giữ để tương thích.
+- File/module bị tác động: `StaffContracts.cs`, `IStaffService.cs`, `StaffService.cs`, `AdminController.cs`, `ApiSession.cs`, `StaffUsers.razor`, `NavMenu.razor`, `Architecture.md`, `PROJECT-BLUEPRINT.md` và báo cáo này.
+- Package/database: không thêm package, không đổi schema và không cần migration.
+- Kiểm chứng: build toàn solution Release thành công 0 warning/0 error; Client và API health chạy được; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: Admin có thể xem tên đăng nhập, vai trò, trạng thái, số lần sai và thời điểm khóa; nút mở khóa chỉ xuất hiện với người dùng đang bị khóa.
+- Vấn đề còn lại: cần chủ dự án đăng nhập Admin để duyệt giao diện và thao tác mở khóa; thay đổi chưa commit/push.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: trạng thái bị khóa phải được tính từ `LockoutEnabled` và `LockoutEnd`, còn `LockedAtUtc` chỉ phục vụ hiển thị/audit; không dùng nó làm nguồn sự thật.
+
+## Entry 051 - Xóa user seed legacy không còn liên kết
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: xóa `customer.a` và `customer.b` khỏi database demo, đồng thời làm seed tự dọn legacy user an toàn.
+- Tóm tắt prompt/công việc thực tế: chủ dự án nhận thấy hai username cũ xuất hiện ở trạng thái ngừng hoạt động trên trang Quản lý người dùng và yêu cầu xóa. AI truy vấn trực tiếp database trước khi xóa để phân biệt user rác với user có lịch sử.
+- Dữ liệu đã xác minh: mỗi legacy user có 0 hồ sơ, 0 tài khoản, 0 giao dịch tạo, 0 audit, 0 refresh token và 0 session; hai Customer thật `0900000001/0900000002` vẫn giữ hồ sơ, bốn tài khoản mỗi người và toàn bộ giao dịch.
+- File/module bị tác động: `DatabaseInitializer.cs`, `README.md`, `Database-Design.md`, `Issue-Register.md` và báo cáo này.
+- Package/database: không thêm package, không đổi schema hoặc migration; xóa đúng hai hàng Identity legacy cùng role liên quan qua `UserManager`.
+- Kiểm chứng: build toàn solution Release thành công 0 warning/0 error; API khởi động và chạy seed thành công; truy vấn lại database chỉ còn hai Customer thật; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: trang Quản lý người dùng không còn `customer.a/customer.b`; seed chỉ tự xóa legacy user không có lịch sử nghiệp vụ/audit, còn user có lịch sử được giữ lại và vô hiệu hóa.
+- Vấn đề còn lại: Docker daemon/Redis trên máy hiện không chạy nên `/health` trả 503 dù API đã seed và xóa dữ liệu thành công; cần bật lại Redis trước khi đăng nhập demo. Thay đổi chưa commit/push.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: không dùng lockout để che dữ liệu seed rác; trước khi xóa user phải kiểm tra toàn bộ quan hệ và giữ nguyên user thật đang sở hữu profile, account và transaction.
+
+## Entry 052 - Khởi động lại môi trường demo
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: khởi động dependency và xác nhận môi trường demo sau thay đổi dữ liệu.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu chạy demo. AI phát hiện Docker Desktop và container Redis chưa hoạt động, khởi động lại Docker/`subank-redis`, nhận diện API và Client cũ vẫn giữ đúng cổng nên không tạo thêm tiến trình trùng.
+- File/module bị tác động: chỉ báo cáo này; không sửa source code.
+- Kiểm chứng: `https://localhost:7081` trả HTTP 200; `https://localhost:7247/health` trả HTTP 200 với trạng thái `Healthy`.
+- Kết quả: Redis, API và Blazor Client đều sẵn sàng cho demo.
+- Vấn đề còn lại: chưa commit/push; cần chủ dự án xác nhận trực quan trên trình duyệt.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: trước khi chạy thêm tiến trình cần kiểm tra cổng; lỗi bind “address already in use” có thể chỉ ra instance mong muốn đã chạy, không phải lỗi ứng dụng.

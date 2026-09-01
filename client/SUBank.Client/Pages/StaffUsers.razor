@@ -1,14 +1,211 @@
 @page "/staff/users"
 @inject ApiSession Session
-<PageTitle>Người dùng bị khóa · SUBank</PageTitle>
-<div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Người dùng bị khóa</h1><p>Mở khóa sau khi đã xác minh yêu cầu hỗ trợ.</p></div></div>
-@if (error is not null) { <div class="alert alert-danger">@error</div> }
-else if (users is null) { <div class="loading-state">Đang tải người dùng...</div> }
-else if (users.Count == 0) { <div class="empty-state"><h2 class="h5">Mọi tài khoản đang hoạt động</h2><p class="text-body-secondary mb-0">Hiện không có người dùng bị khóa.</p></div> }
-else { <div class="card"><div class="card-body"><div class="table-responsive"><table class="table mobile-stack-table mb-0"><thead><tr><th>Tên</th><th>Số lần sai</th><th></th></tr></thead><tbody>@foreach (var user in users) { <tr><td data-label="Tên">@user.UserName</td><td data-label="Số lần sai">@user.FailedAttempts</td><td><button class="btn btn-sm btn-outline-primary" disabled="@busy" @onclick="() => UnlockAsync(user.UserName)">Mở khóa</button></td></tr> }</tbody></table></div></div></div> }
+
+<PageTitle>Quản lý người dùng · SUBank</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Khu vực quản trị</div>
+        <h1 class="mb-1">Quản lý người dùng</h1>
+        <p>Theo dõi trạng thái tài khoản và mở khóa sau khi đã xác minh yêu cầu hỗ trợ.</p>
+    </div>
+</div>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        <p class="mb-2">@error</p>
+        <button class="btn btn-outline-danger btn-sm" type="button" disabled="@loading" @onclick="LoadAsync">Thử lại</button>
+    </div>
+}
+else if (users is null)
+{
+    <div class="loading-state">Đang tải người dùng...</div>
+}
+else
+{
+    @if (message is not null)
+    {
+        <div class="alert alert-success" role="status">@message</div>
+    }
+
+    <div class="history-filter-tabs mb-3" role="group" aria-label="Lọc trạng thái người dùng">
+        <button type="button" class="history-filter @(filter == UserFilter.All ? "is-active" : null)"
+                aria-pressed="@(filter == UserFilter.All)" @onclick="() => SetFilter(UserFilter.All)">Tất cả</button>
+        <button type="button" class="history-filter @(filter == UserFilter.Active ? "is-active" : null)"
+                aria-pressed="@(filter == UserFilter.Active)" @onclick="() => SetFilter(UserFilter.Active)">Hoạt động</button>
+        <button type="button" class="history-filter @(filter == UserFilter.Locked ? "is-active" : null)"
+                aria-pressed="@(filter == UserFilter.Locked)" @onclick="() => SetFilter(UserFilter.Locked)">Bị khóa</button>
+    </div>
+
+    @if (FilteredUsers.Count == 0)
+    {
+        <div class="empty-state">
+            <h2 class="h5">Chưa có người dùng phù hợp</h2>
+            <p class="text-body-secondary mb-0">@EmptyMessage</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table mobile-stack-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Tên đăng nhập</th>
+                                <th>Vai trò</th>
+                                <th>Trạng thái</th>
+                                <th>Số lần sai</th>
+                                <th>Khóa lúc</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in FilteredUsers)
+                            {
+                                <tr>
+                                    <td data-label="Tên đăng nhập"><strong>@user.UserName</strong></td>
+                                    <td data-label="Vai trò">@FormatRoles(user.Roles)</td>
+                                    <td data-label="Trạng thái">
+                                        <span class="badge rounded-pill @GetStatusBadgeClass(user)">@GetStatusText(user)</span>
+                                    </td>
+                                    <td data-label="Số lần sai">@user.FailedAttempts</td>
+                                    <td data-label="Khóa lúc">@FormatLockedAt(user.LockedAtUtc)</td>
+                                    <td data-label="Thao tác" class="text-end">
+                                        @if (user.IsLocked)
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary" type="button" disabled="@busy"
+                                                    @onclick="() => UnlockAsync(user.UserName)">
+                                                @(unlockingUserName == user.UserName ? "Đang mở..." : "Mở khóa")
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-body-secondary">—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+}
+
 @code {
-    private List<LockedUserSummary>? users; private string? error; private bool busy;
+    private List<UserManagementSummary>? users;
+    private UserFilter filter = UserFilter.All;
+    private string? error;
+    private string? message;
+    private string? unlockingUserName;
+    private bool busy;
+    private bool loading;
+
+    private IReadOnlyList<UserManagementSummary> FilteredUsers => users is null
+        ? []
+        : filter switch
+        {
+            UserFilter.Active => users.Where(x => x.IsActive && !x.IsLocked).ToList(),
+            UserFilter.Locked => users.Where(x => x.IsLocked).ToList(),
+            _ => users
+        };
+
+    private string EmptyMessage => filter switch
+    {
+        UserFilter.Active => "Hiện không có người dùng đang hoạt động.",
+        UserFilter.Locked => "Hiện không có người dùng bị khóa.",
+        _ => "Hệ thống chưa có người dùng."
+    };
+
     protected override Task OnInitializedAsync() => LoadAsync();
-    private async Task LoadAsync() { try { users = await Session.GetLockedUsersAsync() ?? []; } catch (Exception ex) { error = ex.Message; } }
-    private async Task UnlockAsync(string name) { busy = true; error = null; try { await Session.UnlockAsync(name); await LoadAsync(); } catch (Exception ex) { error = ex.Message; } finally { busy = false; } }
+
+    private void SetFilter(UserFilter value) => filter = value;
+
+    private async Task LoadAsync()
+    {
+        if (loading) return;
+
+        loading = true;
+        users = null;
+        error = null;
+        message = null;
+        try
+        {
+            users = await Session.GetUsersAsync() ?? [];
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task UnlockAsync(string userName)
+    {
+        if (busy) return;
+
+        busy = true;
+        error = null;
+        message = null;
+        unlockingUserName = userName;
+        try
+        {
+            await Session.UnlockAsync(userName);
+            await LoadAsync();
+            if (error is null) message = $"Đã mở khóa người dùng {userName}.";
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            unlockingUserName = null;
+            busy = false;
+        }
+    }
+
+    private static string FormatRoles(IEnumerable<string> roles)
+    {
+        var labels = roles.Select(FormatRole).ToArray();
+        return labels.Length == 0 ? "Chưa gán" : string.Join(", ", labels);
+    }
+
+    private static string FormatRole(string role) => role switch
+    {
+        "Admin" => "Quản trị viên",
+        "Teller" => "Giao dịch viên",
+        "Customer" => "Khách hàng",
+        _ => role
+    };
+
+    private static string GetStatusText(UserManagementSummary user) => user switch
+    {
+        { IsLocked: true } => "Bị khóa",
+        { IsActive: true } => "Hoạt động",
+        _ => "Ngừng hoạt động"
+    };
+
+    private static string GetStatusBadgeClass(UserManagementSummary user) => user switch
+    {
+        { IsLocked: true } => "text-bg-danger",
+        { IsActive: true } => "text-bg-success",
+        _ => "text-bg-secondary"
+    };
+
+    private static string FormatLockedAt(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—";
+
+    private enum UserFilter
+    {
+        All,
+        Active,
+        Locked
+    }
 }

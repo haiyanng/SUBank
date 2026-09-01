@@ -6,7 +6,7 @@ using SUBank.Application.Abstractions;
 namespace SUBank.Api.Realtime;
 
 [Authorize]
-public sealed class BankingHub(IActiveSessionStore activeSessions) : Hub
+public sealed class BankingHub(IActiveSessionValidator sessionValidator) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -20,7 +20,7 @@ public sealed class BankingHub(IActiveSessionStore activeSessions) : Hub
 
         try
         {
-            if (!await activeSessions.IsActiveAsync(userId, sessionId, Context.ConnectionAborted))
+            if (!await sessionValidator.IsValidAsync(userId, sessionId, Context.ConnectionAborted))
             {
                 Context.Abort();
                 return;

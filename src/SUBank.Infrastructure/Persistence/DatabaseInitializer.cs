@@ -11,10 +11,12 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
     public const string DemoPassword = "Demo@12345";
     public const string DemoTransactionPassword = "123456";
 
-    public async Task InitializeAsync(bool seedDemoData, CancellationToken cancellationToken = default)
+    public async Task InitializeAsync(DatabaseInitializationOptions options, CancellationToken cancellationToken = default)
     {
-        await dbContext.Database.MigrateAsync(cancellationToken);
-        if (!seedDemoData) return;
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.SeedDemoData) EnsureDemoSeedTarget(options);
+        if (options.ApplyMigrationsOnStartup) await dbContext.Database.MigrateAsync(cancellationToken);
+        if (!options.SeedDemoData) return;
         foreach (var role in new[] { "Customer", "Teller", "Admin" })
             if (!await roleManager.RoleExistsAsync(role)) EnsureSucceeded(await roleManager.CreateAsync(new IdentityRole(role)));
 
@@ -58,10 +60,9 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
                 throw new InvalidOperationException(
                     $"Không thể hợp nhất hai Customer '{userName}' và '{legacyUserName}' vì cả hai đều có hồ sơ.");
             }
-            else if (legacyUser.IsActive)
+            else if (!legacyUserHasProfile)
             {
-                legacyUser.IsActive = false;
-                EnsureSucceeded(await userManager.UpdateAsync(legacyUser));
+                await RemoveOrDeactivateLegacyUserAsync(legacyUser, cancellationToken);
             }
         }
 
@@ -97,8 +98,14 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
         {
             profile = new CustomerProfile
             {
-                UserId = user.Id, FullName = fullName, DateOfBirth = dateOfBirth, IdentityCardNumber = identityCardNumber,
-                Phone = phone, Email = email, PermanentAddress = address, CreatedAtUtc = DateTimeOffset.UtcNow
+                UserId = user.Id,
+                FullName = fullName,
+                DateOfBirth = dateOfBirth,
+                IdentityCardNumber = identityCardNumber,
+                Phone = phone,
+                Email = email,
+                PermanentAddress = address,
+                CreatedAtUtc = DateTimeOffset.UtcNow
             };
             dbContext.CustomerProfiles.Add(profile);
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -136,8 +143,12 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
 
         dbContext.BankAccounts.Add(new BankAccount
         {
-            CustomerProfileId = profile.Id, AccountNumber = accountNumber, Balance = openingBalance,
-            Currency = "VND", Status = AccountStatus.Active, CreatedAtUtc = DateTimeOffset.UtcNow
+            CustomerProfileId = profile.Id,
+            AccountNumber = accountNumber,
+            Balance = openingBalance,
+            Currency = "VND",
+            Status = AccountStatus.Active,
+            CreatedAtUtc = DateTimeOffset.UtcNow
         });
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -147,6 +158,40 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
         EnsureSucceeded(await userManager.SetUserNameAsync(user, $"disabled-{user.Id}"));
         user.IsActive = false;
         EnsureSucceeded(await userManager.UpdateAsync(user));
+    }
+
+    private async Task RemoveOrDeactivateLegacyUserAsync(
+        ApplicationUser legacyUser,
+        CancellationToken cancellationToken)
+    {
+        var hasBusinessHistory = await dbContext.FinancialTransactions
+            .AnyAsync(x => x.CreatedByUserId == legacyUser.Id, cancellationToken);
+        var hasAuditHistory = await dbContext.AuditLogs
+            .AnyAsync(x => x.UserId == legacyUser.Id, cancellationToken);
+
+        if (!hasBusinessHistory && !hasAuditHistory)
+        {
+            EnsureSucceeded(await userManager.DeleteAsync(legacyUser));
+            return;
+        }
+
+        if (!legacyUser.IsActive) return;
+        legacyUser.IsActive = false;
+        EnsureSucceeded(await userManager.UpdateAsync(legacyUser));
+    }
+
+    private void EnsureDemoSeedTarget(DatabaseInitializationOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.AllowedSeedDataSource) ||
+            string.IsNullOrWhiteSpace(options.AllowedSeedDatabase))
+            throw new InvalidOperationException(
+                "Demo seed requires an explicit allowed data source and database.");
+
+        var connection = dbContext.Database.GetDbConnection();
+        if (!string.Equals(connection.DataSource, options.AllowedSeedDataSource, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(connection.Database, options.AllowedSeedDatabase, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"Demo seed is not allowed for data source '{connection.DataSource}' and database '{connection.Database}'.");
     }
 
     private static void EnsureSucceeded(IdentityResult result)

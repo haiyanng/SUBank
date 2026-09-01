@@ -3,31 +3,209 @@
 @inject IJSRuntime JS
 
 <PageTitle>Sao kê tài khoản</PageTitle>
-<div class="page-heading"><div><div class="eyebrow">Báo cáo tài chính</div><h1 class="mb-1">Sao kê tài khoản</h1><p>Lọc theo tháng hoặc cả năm và tải bản PDF.</p></div></div>
-@if (error is not null) { <div class="alert alert-danger">@error</div> }
-<div class="row g-3 align-items-end mb-4">
-    <div class="col-12 col-md-4"><label class="form-label" for="account">Số tài khoản</label><input id="account" class="form-control" maxlength="10" @bind="accountNumber" /></div>
-    <div class="col-6 col-md-2"><label class="form-label" for="year">Năm</label><input id="year" class="form-control" type="number" min="2000" max="2100" @bind="year" /></div>
-    <div class="col-6 col-md-2"><label class="form-label" for="month">Tháng</label><select id="month" class="form-select" @bind="month"><option value="">Cả năm</option>@for (var value = 1; value <= 12; value++) { <option value="@value">@value</option> }</select></div>
-    <div class="col-12 col-md-4"><button class="btn btn-primary me-2" disabled="@busy" @onclick="LoadAsync">Xem sao kê</button><button class="btn btn-outline-danger" disabled="@(busy || statement is null)" @onclick="DownloadPdfAsync">Tải PDF</button></div>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Báo cáo tài chính</div>
+        <h1 class="mb-1">Sao kê tài khoản</h1>
+        <p>Lọc theo tháng hoặc cả năm và tải bản PDF.</p>
+    </div>
 </div>
+
+@if (loadingAccounts)
+{
+    <div class="empty-state" role="status">
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        Đang tải tài khoản...
+    </div>
+}
+else if (accountLoadError is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        <p class="mb-2">@accountLoadError</p>
+        <button class="btn btn-outline-danger btn-sm" type="button" @onclick="LoadAccountsAsync">Thử lại</button>
+    </div>
+}
+else if (accounts.Count == 0)
+{
+    <div class="empty-state">Bạn chưa có tài khoản để lập sao kê.</div>
+}
+else
+{
+    @if (error is not null)
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+
+    <div class="row g-3 align-items-end mb-4">
+        <div class="col-12 col-md-4">
+            <label class="form-label" for="account">Số tài khoản</label>
+            <select id="account" class="form-select" disabled="@busy" @bind="accountNumber" @bind:after="ClearStatement">
+                @foreach (var account in accounts)
+                {
+                    <option value="@account.AccountNumber">@account.AccountNumber</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="year">Năm</label>
+            <input id="year" class="form-control" type="number" min="2000" max="2100" disabled="@busy" @bind="year" @bind:after="ClearStatement" />
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label" for="month">Tháng</label>
+            <select id="month" class="form-select" disabled="@busy" @bind="month" @bind:after="ClearStatement">
+                <option value="">Cả năm</option>
+                @for (var value = 1; value <= 12; value++)
+                {
+                    <option value="@value">@value</option>
+                }
+            </select>
+        </div>
+        <div class="col-12 col-md-4">
+            <button class="btn btn-primary me-2" disabled="@busy" @onclick="LoadAsync">Xem sao kê</button>
+            <button class="btn btn-outline-danger" disabled="@(busy || statement is null)" @onclick="DownloadPdfAsync">Tải PDF</button>
+        </div>
+    </div>
+}
+
 @if (statement is not null)
 {
-    <div class="row g-3 mb-3"><div class="col-md-3"><div class="card"><div class="card-body">Số dư đầu kỳ<br /><strong>@statement.OpeningBalance.ToString("N2")</strong></div></div></div>
+    <div class="row g-3 mb-3">
+        <div class="col-md-3"><div class="card"><div class="card-body">Số dư đầu kỳ<br /><strong>@statement.OpeningBalance.ToString("N2")</strong></div></div></div>
         <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi có<br /><strong class="text-success">@statement.TotalCredit.ToString("N2")</strong></div></div></div>
         <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi nợ<br /><strong class="text-danger">@statement.TotalDebit.ToString("N2")</strong></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body">Số dư cuối kỳ<br /><strong>@statement.ClosingBalance.ToString("N2")</strong></div></div></div></div>
-    @if (statement.Transactions.Count == 0) { <div class="empty-state">Không có giao dịch trong kỳ đã chọn.</div> }
-    else { <div class="card"><div class="card-body p-0 p-md-3"><div class="table-responsive"><table class="table mobile-stack-table mb-0"><thead><tr><th>Thời gian</th><th>Mã</th><th>Chiều</th><th class="text-end">Số tiền</th></tr></thead><tbody>
-    @foreach (var item in statement.Transactions) { <tr><td data-label="Thời gian">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td data-label="Mã">@item.ReferenceNo</td><td data-label="Chiều">@item.Direction</td><td data-label="Số tiền" class="text-md-end money">@item.Amount.ToString("N2") VND</td></tr> }
-    </tbody></table></div>
-    </div></div> }
+        <div class="col-md-3"><div class="card"><div class="card-body">Số dư cuối kỳ<br /><strong>@statement.ClosingBalance.ToString("N2")</strong></div></div></div>
+    </div>
+
+    @if (statement.Transactions.Count == 0)
+    {
+        <div class="empty-state">Không có giao dịch trong kỳ đã chọn.</div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-body p-0 p-md-3">
+                <div class="table-responsive">
+                    <table class="table mobile-stack-table mb-0">
+                        <thead><tr><th>Thời gian</th><th>Mã</th><th>Chiều</th><th class="text-end">Số tiền</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in statement.Transactions)
+                            {
+                                <tr>
+                                    <td data-label="Thời gian">@item.CreatedAtUtc.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td data-label="Mã">@item.ReferenceNo</td>
+                                    <td data-label="Chiều">@item.Direction</td>
+                                    <td data-label="Số tiền" class="text-md-end money">@item.Amount.ToString("N2") VND</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
 }
+
 @code {
-    [SupplyParameterFromQuery(Name = "account")] public string? Account { get; set; }
-    private string accountNumber = ""; private int year = DateTime.UtcNow.Year; private int? month = DateTime.UtcNow.Month;
-    private AccountStatement? statement; private string? error; private bool busy;
-    protected override async Task OnInitializedAsync() { var accounts = await Session.GetAccountsAsync(); accountNumber = accounts?.FirstOrDefault(x => x.AccountNumber == Account)?.AccountNumber ?? accounts?.FirstOrDefault()?.AccountNumber ?? ""; }
-    private async Task LoadAsync() { busy = true; error = null; try { statement = await Session.GetStatementAsync(accountNumber, year, month); } catch (Exception exception) { error = exception.Message; } finally { busy = false; } }
-    private async Task DownloadPdfAsync() { busy = true; error = null; try { var bytes = await Session.GetStatementPdfAsync(accountNumber, year, month); var period = month is null ? year.ToString() : $"{year}-{month:00}"; await JS.InvokeVoidAsync("subankDownloadBase64", $"SUBank-{accountNumber}-{period}.pdf", "application/pdf", Convert.ToBase64String(bytes)); } catch (Exception exception) { error = exception.Message; } finally { busy = false; } }
+    [SupplyParameterFromQuery(Name = "account")]
+    public string? Account { get; set; }
+
+    private readonly List<AccountSummary> accounts = [];
+    private string accountNumber = string.Empty;
+    private int year = DateTime.UtcNow.Year;
+    private int? month = DateTime.UtcNow.Month;
+    private AccountStatement? statement;
+    private string? statementAccountNumber;
+    private int statementYear;
+    private int? statementMonth;
+    private string? accountLoadError;
+    private string? error;
+    private bool loadingAccounts = true;
+    private bool busy;
+
+    protected override Task OnInitializedAsync() => LoadAccountsAsync();
+
+    private async Task LoadAccountsAsync()
+    {
+        loadingAccounts = true;
+        accountLoadError = null;
+        try
+        {
+            ClearStatement();
+            accounts.Clear();
+            accounts.AddRange(await Session.GetAccountsAsync() ?? []);
+            accountNumber = accounts.FirstOrDefault(x => x.AccountNumber == Account)?.AccountNumber
+                ?? accounts.FirstOrDefault()?.AccountNumber
+                ?? string.Empty;
+        }
+        catch (Exception exception)
+        {
+            accountLoadError = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            loadingAccounts = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (busy) return;
+        var selectedAccount = accountNumber;
+        var selectedYear = year;
+        var selectedMonth = month;
+        busy = true;
+        error = null;
+        ClearStatement();
+        try
+        {
+            statement = await Session.GetStatementAsync(selectedAccount, selectedYear, selectedMonth);
+            statementAccountNumber = selectedAccount;
+            statementYear = selectedYear;
+            statementMonth = selectedMonth;
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task DownloadPdfAsync()
+    {
+        if (busy || statement is null || string.IsNullOrWhiteSpace(statementAccountNumber)) return;
+        var selectedAccount = statementAccountNumber;
+        var selectedYear = statementYear;
+        var selectedMonth = statementMonth;
+        busy = true;
+        error = null;
+        try
+        {
+            var bytes = await Session.GetStatementPdfAsync(selectedAccount, selectedYear, selectedMonth);
+            var period = selectedMonth is null ? selectedYear.ToString() : $"{selectedYear}-{selectedMonth:00}";
+            await JS.InvokeVoidAsync(
+                "subankDownloadBase64",
+                $"SUBank-{selectedAccount}-{period}.pdf",
+                "application/pdf",
+                Convert.ToBase64String(bytes));
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void ClearStatement()
+    {
+        statement = null;
+        statementAccountNumber = null;
+        error = null;
+    }
 }

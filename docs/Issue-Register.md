@@ -307,3 +307,234 @@ Theo quyết định ngày 2026-08-29, AI chỉ tiếp tục các lỗi nontrivi
 | 2026-08-29 | Sửa R06 + R16: single-flight access-token refresh, retry một lần, absolute session lifetime, Redis conditional TTL renew và atomic concurrent rotation; build Release 0 warning/0 error, không chạy test. | CHỜ XÁC NHẬN |
 | 2026-08-29 | Sửa R07 + R08: SignalR dùng token hiện hành, tự retry initial/closed failure, chặn callback cũ; Hub và notification chỉ phục vụ active-session group, connection đóng khi JWT hết hạn; build Release 0 warning/0 error, không chạy test. | CHỜ XÁC NHẬN |
 | 2026-08-29 | Sửa R02: refresh/logout dùng chung khóa `UserSession`; logout từ token đã rotate thu hồi toàn family và Redis theo cơ chế idempotent, có deadlock retry; build Release 0 warning/0 error, không chạy test. | CHỜ XÁC NHẬN |
+
+## 11. Phụ lục cập nhật trạng thái (append-only)
+
+Các mục dưới đây là bản ghi mới hơn theo thời gian và có hiệu lực khi xác định trạng thái hiện tại. Nội dung ở các mục phía trên được giữ nguyên để bảo toàn lịch sử, không bị xóa hoặc ghi đè.
+
+### 2026-08-29 – R17: Đồng nhất dữ liệu khi tạo sao kê
+
+- Trạng thái mới: **ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT**.
+- Cách sửa: đọc số dư account và toàn bộ movement dùng để tính sao kê trong một SQL transaction `RepeatableRead` ngắn. Account được đọc trước để giữ shared lock; `asOfUtc` được lấy sau lần đọc này và là cận trên chung của các query ledger.
+- Cơ sở đúng: mọi luồng chuyển/nộp tiền hiện tại đều cập nhật account và ghi `FinancialTransaction` trong cùng SQL transaction, nên writer của đúng account không thể commit xen giữa cửa sổ đọc.
+- Thứ tự giao dịch được cố định theo `CreatedAtUtc`, sau đó `Id`. SQL deadlock 1205 được tự retry một lần; nếu lần thứ hai vẫn deadlock, API trả conflict an toàn để người dùng thử lại.
+- Transaction được kết thúc trước khi tính/map DTO và trước khi render PDF, tránh giữ khóa trong phần xử lý CPU.
+- Không đổi schema, API contract, package, Client hoặc phần QR.
+- Kiểm chứng: build Release toàn solution thành công, 0 warning và 0 error; không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+- Rủi ro còn lại: chưa kiểm chứng transfer/deposit đồng thời với sao kê trên SQL Server thật; `RepeatableRead` có thể chặn writer cùng account trong thời gian ngắn. Quy tắc cho kỳ sao kê nằm hoàn toàn trong tương lai không thuộc phạm vi R17 và chưa thay đổi.
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-08-29 | Sửa R17: đồng nhất account balance, movements và period rows trong một read window có `asOfUtc`; giải phóng transaction trước khi render PDF. | CHỜ XÁC NHẬN |
+
+## 12. Phụ lục Application Log (append-only)
+
+### 2026-08-30 – Hoàn thiện structured Application Log
+
+- Trạng thái: **ĐÃ TRIỂN KHAI TRONG WORKING TREE – CHỜ DUYỆT**.
+- API dùng Serilog nhận event từ `ILogger`, ghi JSON Lines ra console; Development bật rolling file theo ngày và dung lượng trong `src/SUBank.Api/logs/`.
+- Request completion log chỉ chủ động ghi method, route template, status và elapsed time. Correlation ID được allow-list, đưa vào logging scope, response header và ProblemDetails.
+- EF interceptor tự điền `AuditLog.CorrelationId` cho audit mới phát sinh trong HTTP request; không đổi schema vì cột đã tồn tại. Startup/background audit không có HTTP context vẫn có thể để `null`.
+- Lớp loại thuộc tính nhạy cảm loại `RequestPath`, query/body/token/password/connection string và một số identifier top-level khỏi event trước sink. Đây không phải sanitizer tổng quát; developer vẫn không được log DTO, nested secret hoặc PII.
+- Cấu hình Development hiện tại: 10 MiB mỗi file, roll theo ngày/dung lượng, tối đa 31 file và tuổi tối đa 14 ngày. Ngưỡng chạm trước có thể xóa file sớm hơn.
+- Kiểm chứng: restore thành công; build toàn solution 0 warning, 0 error; API chạy trên HTTP/HTTPS; rolling file được tạo; route value/query/body giả không xuất hiện trong request completion event; correlation header và ProblemDetails khớp. Không chạy hoặc thêm test theo quyết định hiện tại.
+- Redis local đang không khả dụng nên successful-login/Admin Audit API chưa được dùng để đọc lại correlation từ SQL. Failure `503` đã được ghi technical log đúng correlation.
+- Không thay đổi QR.
+
+Hai lỗi triển khai được phát hiện và sửa ngay trong cùng phạm vi:
+
+1. Dùng nhầm `StatusCodes.StatusServiceUnavailable` làm build lỗi; đã sửa thành `Status503ServiceUnavailable`.
+2. Scope mặc định của ASP.NET Core tự thêm raw `RequestPath`, làm lộ route value dù message đã dùng route template; đã thêm enricher loại thuộc tính và snapshot route template trước pipeline để exception-handled request không biến thành `<unmapped>`.
+
+### X08 – Chưa có backup và restore được kiểm chứng
+
+- Mức độ: **CAO đối với production; TRUNG BÌNH đối với demo học tập**.
+- Trạng thái: **CHƯA SỬA**.
+- Phát hiện: rolling application log chỉ giới hạn file local. Repo chưa có lịch backup SQL, bản sao ở vị trí độc lập, retention cho backup, restore script, cảnh báo backup thất bại hoặc bằng chứng restore drill. `AuditLog` và `FinancialTransaction` nằm trong SQL không tự trở thành backup.
+- Rủi ro: filesystem container có thể mất khi redeploy; lỗi host/ổ đĩa hoặc thao tác sai database có thể làm mất cả dữ liệu chính và log local.
+- Hướng xử lý khi chốt nền tảng deploy: dùng backup/PITR của database provider, xuất bản sao định kỳ sang storage độc lập, mã hóa và phân quyền, quy định retention, giám sát job, viết runbook rồi thực hiện restore drill trước demo/production quan trọng.
+- Không được đánh dấu đã sửa chỉ vì provider quảng cáo backup; cần cấu hình thực tế và bằng chứng restore thành công.
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-08-30 | Hoàn thiện Application Log; ghi X08 về khoảng trống backup/restore. | CHỜ XÁC NHẬN |
+
+### 2026-08-30 – Bổ sung kiểm chứng exception response
+
+- Kiểm tra exception-handled request phát hiện ProblemDetails đã có `correlationId` nhưng `X-Correlation-ID` bị mất khi exception middleware dựng lại response.
+- Cách sửa: đăng ký `Response.OnStarting` trong correlation middleware để gắn lại header ngay trước khi gửi response.
+- Kiểm chứng: gọi `/api/auth/refresh` không có cookie nhận `401`; response header `X-Correlation-ID`, ProblemDetails `correlationId` và request log cùng mang `exception-route-check-02`. Request log giữ đúng route template `api/auth/refresh`, không còn `<unmapped>`.
+- Build Release toàn solution sau sửa thành công, 0 warning và 0 error; không chạy test.
+
+## 13. Phụ lục hoàn tất lượt sửa lỗi non-QR (append-only)
+
+### 2026-08-31 – Trạng thái mới nhất
+
+Phụ lục này chỉ ghi thêm trạng thái mới. Mọi mô tả và trạng thái lịch sử ở phía trên được giữ nguyên.
+
+| Mã | Trạng thái mới | Cách xử lý/giới hạn |
+|---|---|---|
+| R03 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Nộp tiền kiểm tra Teller tồn tại, `IsActive` và lockout trước nghiệp vụ. Khi login failure làm Identity lock user, active session Redis và persisted token family bị thu hồi, SignalR nhận force-logout. |
+| R04 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Form chuyển/nộp tiền không còn điền sẵn tài khoản đích, số tiền, nội dung hoặc mật khẩu giao dịch. Mật khẩu giao dịch luôn bị xóa sau mỗi lần gửi; form nghiệp vụ được reset sau thành công. |
+| R05 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Transfer và Teller deposit có `DataAnnotationsValidator`, message theo field, rule tài khoản 10 số, amount dương/2 chữ số lẻ/không vượt `decimal(18,2)`, description tối đa 280 và transaction password 6 số. Server validation vẫn là lớp có thẩm quyền. |
+| R09 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Migration/seed khi startup dùng cờ opt-in. Cấu hình gốc/Production tắt cả hai; Development mới bật. Production runtime không cần quyền DDL. |
+| R10 | ĐÃ XỬ LÝ PHẦN REPOSITORY – CẦN EVIDENCE MÔI TRƯỜNG | Thêm `Backup-Restore-Runbook.md`: phân nhánh DB đã/chưa chạy migration, full backup, export bảng, `VERIFYONLY`, restore drill DB riêng và bằng chứng. Dữ liệu đã bị xóa không thể được code tự tái tạo; không sửa migration lịch sử. |
+| R11 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Publish API tự restore/publish Blazor Client và chép vào `wwwroot`; dùng path `/` đa nền tảng, không tạo project reference Api→Client. API phục vụ static file/SPA fallback nhưng giữ `/api`, `/hubs`, `/health`, `/swagger` không rơi nhầm vào `index.html`. |
+| R12 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Demo seed cần cờ riêng, chỉ được chạy trong Development và connection phải khớp chính xác allow-list data source/database trước bất kỳ lần ghi nào. |
+| R14 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Sai/đúng transaction password không còn tăng/reset login lockout counter. Phạm vi demo dùng rate limit riêng 10 request/phút và audit `TRANSACTION_PASSWORD_FAILED`. |
+| R18 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Router dùng allow-list page→role và deny-by-default; sai role đi `/403`. `Session.Changed` bắt buộc re-render gate. Backend authorization vẫn là security boundary. |
+| R19 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Bootstrap chỉ coi 401 refresh là không có phiên; lỗi network/5xx hiện state riêng có Retry. Transfer và Statements có loading/error/retry/empty state cho initial load. |
+| R20 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | `/health/live` là process liveness; `/health/ready` và `/health` kiểm tra SQL Server + Redis với timeout 3 giây, trả 503 khi dependency lỗi và response chỉ chứa `status`. |
+| R21 | TẠM HOÃN ĐẾN GIAI ĐOẠN TEST | Fixture đã được bổ sung cấu hình migration/seed allow-list để không hỏng startup, nhưng việc tách DB theo run và dùng SQL Server/Redis disposable vẫn chưa làm theo quyết định hoãn test của chủ dự án. |
+| X01 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Startup fail-fast với connection/JWT/Redis rỗng, signing key dưới 32 byte, token lifetime/grace không hợp lệ và seed allow-list thiếu. |
+| X02 | ĐÃ XỬ LÝ PHẦN REPOSITORY – PHỤ THUỘC HOST | Production bật HSTS/HTTPS redirect, cấm wildcard `AllowedHosts`; forwarded headers chỉ bật với danh sách IP proxy tin cậy và chạy trước HSTS/redirect. Cần chốt provider và test TLS/proxy thật mới đóng hoàn toàn. |
+| X03 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Tài liệu database/blueprint đã khớp representation `nvarchar(20)` và `Transfer`/`CashDeposit` trong model/migration. |
+| X04 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | `index.html` dùng `lang="vi"`; fatal/reload/dismiss UI của Blazor được Việt hóa. |
+| X05 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Thêm `.gitattributes`, đánh dấu binary và chốt line ending; migration C# giữ UTF-8 BOM. `dotnet format --verify-no-changes` thành công. |
+| X06 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Logout endpoint luôn expire cookie khi đã vào controller và trả marker header. Client chỉ xóa session local khi nhận marker; response từ proxy/middleware trước controller hoặc network failure giữ phiên và cho retry. |
+| X07 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Mọi full-session revocation dùng cùng `UserSession` lock/transaction và quy tắc ưu tiên reason xác định: reuse > locked > activation failure > replaced > logout. |
+| X08 | ĐÃ XỬ LÝ PHẦN REPOSITORY – PHỤ THUỘC HOST | Runbook đã chốt RPO/RTO/retention, mã hóa, quyền, alert và mẫu evidence. Chỉ đóng sau khi provider có PITR/backup thật và restore drill thành công. |
+
+Các mục R01, R02, R06–R08, R13 và R15–R17 giữ nguyên bằng chứng sửa ở các phụ lục trước. Tính đến trạng thái working tree ngày 2026-08-31, toàn bộc lỗi non-QR có thể xử lý hoàn toàn trong repository đã được sửa. Ba nhóm chưa thể đóng hoàn toàn là R21 do hoãn giai đoạn test, X02/X08 do chưa chốt host và chưa có evidence môi trường. QR-01–QR-04 vẫn tạm hoãn và không bị sửa trong lượt này.
+
+### Kiểm chứng lượt cuối
+
+- `dotnet build SUBank.sln -c Release --no-restore`: thành công, 0 warning, 0 error.
+- `dotnet format SUBank.sln --verify-no-changes --no-restore`: thành công.
+- `dotnet publish src/SUBank.Api/SUBank.Api.csproj -c Release -o .artifacts/publish-final --no-restore`: thành công; nested Client target tự restore và publish.
+- Smoke artifact cùng origin: `/` 200 HTML, `/accounts` 200 HTML, framework JavaScript 200, route API không tồn tại 404 ProblemDetails, `/health/live` 200 và `/health/ready` 503 khi dependency không sẵn sàng.
+- Logout endpoint đã trả `204`, cookie hết hạn đúng path `/api/auth` và `X-SUBank-Refresh-Cookie-Cleared: 1`.
+- Không chạy hoặc thêm test theo quyết định hoãn test của chủ dự án.
+- Chưa commit hoặc push các thay đổi trong lượt này.
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-08-31 | Hoàn tất các sửa lỗi non-QR có thể xử lý trong repository; giữ R21, X02, X08 và QR ở trạng thái minh bạch theo dependency/quyết định phạm vi. | CHỜ XÁC NHẬN |
+
+Ghi chú đính chính append-only: cụm "toàn bộc lỗi" trong đoạn tóm tắt ngay phía trên là lỗi chính tả; nội dung đúng là "toàn bộ lỗi". Không thay đổi trạng thái kỹ thuật.
+
+## 14. Phụ lục hardening authentication/session phía Client (append-only)
+
+### 2026-09-01 – Trạng thái X09–X38
+
+Phụ lục này chỉ nối thêm phát hiện và kết quả mới; không thay thế hay xóa bất kỳ nội dung lịch sử nào phía trên.
+
+| Mã | Trạng thái mới | Phát hiện và cách xử lý |
+|---|---|---|
+| X09 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Customer trước đó có thể được refresh như staff và không hết UI đúng 15 phút từ login. Đã chốt absolute Customer session/access-token 15 phút, không proactive refresh/retry; timer monotonic kèm wall-clock và foreground check buộc xóa UI đúng mốc. |
+| X10 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Trang sao kê có thể hiển thị kết quả cũ nhưng tải PDF theo bộ lọc mới. Đã snapshot account/năm/tháng của kết quả, xóa statement khi filter đổi và chỉ tải PDF theo snapshot đang hiển thị. |
+| X11 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Response async cũ của page/request có thể ghi đè state mới sau reload, dispose hoặc session change. Đã thêm version/generation guard, snapshot bearer/session và bỏ kết quả stale trước khi mutate UI. |
+| X12 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Development HTTP không tương thích refresh cookie `Secure` và exact-origin CORS. Đã chỉ giữ launch profile HTTPS, tách port API/Client trong Development; Production/demo giữ same-origin. |
+| X13 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Nhiều tab dùng chung HttpOnly refresh cookie nhưng có identity/session cục bộ khác nhau, dẫn tới restore nhầm phiên. Đã bind `SessionId` riêng theo tab và từ chối bootstrap/non-bootstrap mismatch. |
+| X14 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Realtime reload account có thể đổi lựa chọn về account đầu tiên/primary hoặc để response cũ ghi đè. Đã giữ account đang chọn khi còn tồn tại, fallback rõ ràng và dùng load-version guard. |
+| X15 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Production có thể tự migration/seed khi startup. Đã đổi thành opt-in, hard-fail ngoài Development và allow-list chính xác database demo trước khi ghi. |
+| X16 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Login có thể ghi SQL session/token rồi lỗi khi activate Redis, để lại ghost session. Đã compensation Redis/SQL bằng cancellation token độc lập và audit activation failure. |
+| X17 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Middleware chỉ tin Redis nên session/user bị revoke/lock bền vững trong SQL có thể còn qua trong một số failure window. Đã bổ sung validator đối chiếu Redis, `UserSession`, user active và lockout trước controller/Hub. |
+| X18 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Teller cash deposit thiếu policy rate-limit riêng và use case chưa tự kiểm tra Teller active/lockout. Đã thêm `CashDeposit` limiter và kiểm tra identity ngay trong service, không chỉ dựa vào UI/controller. |
+| X19 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Logout từng revoke Redis trước khi SQL commit, có thể mất durable revocation khi SQL lỗi. Đã commit `UserSession`/token family trong SQL trước, sau đó compare-delete Redis và SignalR best-effort. |
+| X20 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Bắt đầu login mới từng xóa `Current` trước khi biết login thành công, nên nhập sai credential làm mất phiên đang dùng. Đã giữ phiên hiện tại đến khi response mới được validate/bind thành công. |
+| X21 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Một số `IdentityResult` khi lock/unlock/reset counter bị bỏ qua và unlock không cùng transaction. Đã buộc kiểm tra kết quả và gom update unlock trong SQL transaction. |
+| X22 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Request A có thể nhận 401 sau khi session B thay thế rồi bị retry bằng token B, khiến ý định cũ chạy dưới identity/session mới. Đã chụp generation và bearer; chỉ refresh/retry khi vẫn cùng logical session, response stale bị bỏ. |
+| X23 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Logout lỗi từng để UI/session local tiếp tục hoạt động hoặc xóa state mà không có bằng chứng server. Đã block UI/restore ngay, yêu cầu marker thu hồi, fallback bearer-bound và hiển thị `logout-unconfirmed` khi cả hai đường không xác nhận. |
+| X24 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Timer Customer có thể bị browser throttle/suspend khi tab ẩn. Đã kiểm tra expiry lại trên `visibilitychange`, `focus`, `pageshow`; server SQL vẫn là lớp chặn deadline có thẩm quyền. |
+| X25 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Tab đã bind có thể bootstrap từ shared cookie của session khác. Đã so expected tab SID với response SID và fail closed thay vì đổi identity âm thầm. |
+| X26 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Compensation bootstrap mismatch nếu dùng shared cookie có thể thu hồi nhầm session mới của tab khác. Bản vá tạm này đã bị loại bỏ; tab cũ chỉ block restore cục bộ/session-specific và không dùng cookie để revoke session không thuộc nó. |
+| X27 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Login/refresh/logout đồng thời có thể nhận `Set-Cookie` đảo thứ tự. Đã thay lease TTL bằng Web Lock thật, giữ xuyên `fetch`, đọc và validate response. |
+| X28 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | `204` logout khi không có cookie/bearer chỉ chứng minh cookie đã clear, không chứng minh session đã revoke. Client nay chỉ xác nhận khi có `X-SUBank-Session-Revoked: 1`; nếu thiếu thì dùng bearer fallback. |
+| X29 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Login đã tạo session nhưng Client từ chối do stale generation/storage/mismatch có thể để lại session sống. Đã block restore và gọi `reject-session` bằng chính bearer vừa nhận với `credentials: omit`. |
+| X30 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Trạng thái logout giữa tab có thể bị bỏ lỡ do event đến trong lúc callback đang chạy. Đã dùng `BroadcastChannel`, `storage`, focus/pageshow, cờ rerun và generation guard; storage hỏng phải fail closed. |
+| X31 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Một logout marker duy nhất có thể bị session mới ghi đè và mở lại session cũ. Đã lưu danh sách logout intent theo SID, TTL 32 ngày, không giới hạn số entry bằng cách cắt mất intent còn hiệu lực. |
+| X32 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Các biểu diễn Guid khác nhau có thể làm so sánh SID sai. Protocol nay chỉ chấp nhận Guid format `N` lowercase 32 ký tự tại biên browser/API. |
+| X33 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Lỗi Redis/SignalR sau SQL commit từng có thể làm API báo thất bại dù durable revocation đã thành công. Đã chốt SQL durable-first; Redis cleanup và `ForceLogout` là post-commit best-effort có log. |
+| X34 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Auth/CSRF error response có thể bị cache. Login, refresh, logout, reject-session, `/me` và invalid-CSRF response nay đều gắn `Cache-Control: no-store` và `Pragma: no-cache`. |
+| X35 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Browser có thể đã nhận `Set-Cookie` nhưng Client không đọc/deserialize/validate được body login, tạo ghost session. JavaScript nay validate response tối thiểu ngay trong Web Lock; dùng SID header/body để block và cookie compensation trước khi nhả khóa. Header/body canonical khác nhau thì chặn toàn bộ restore và thử thu hồi cả hai ID. |
+| X36 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | `history.state` không bền qua mọi route entry và fallback có thể làm mất tab binding; malformed/unavailable storage từng có nguy cơ fail open. Đã chỉ dùng `sessionStorage` cho tab SID, `localStorage` cho shared intent; không có fallback và mọi lỗi storage đều fail closed. |
+| X37 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Callback `ForceLogout` cũ có thể await qua thời điểm login mới rồi xóa nhầm phiên mới. `EndFromServerAsync` và expiry nay khóa chung `refreshGate`, kiểm tra expected generation trước/sau await; chỉ navigate khi thực sự kết thúc đúng phiên. |
+| X38 | CHƯA ĐÓNG – RESIDUAL/CHỜ R21 VÀ MÔI TRƯỜNG | Phạm vi browser phụ thuộc Web Locks, `sessionStorage`, `localStorage`; logout-intent traffic cực lớn có thể đầy quota và fail closed. Abort/timeout phía browser không chứng minh server đã dừng, nên có thể có outcome ambiguity/availability error dù backend atomicity ngăn split-brain. Cần browser thật, multi-tab, network-failure, SQL/Redis concurrency test trong R21 trước khi đóng. |
+
+### Kiểm chứng sau hardening
+
+- `dotnet format SUBank.sln --verify-no-changes --no-restore`: thành công.
+- `dotnet build SUBank.sln -c Release --no-restore`: thành công, 0 warning, 0 error.
+- Parse inline JavaScript bằng Node: thành công, 1 script hợp lệ.
+- Publish artifact Release mới: thành công; API tự publish Blazor Client cùng origin.
+- Smoke artifact: `/` và `/accounts` 200 HTML; framework JavaScript 200; Swagger JSON 200; `/health/live` 200; `/health/ready` 503 đúng vì SQL Server/Redis không sẵn sàng trong sandbox.
+- Logout không có cookie/bearer: 204, `no-store`, cookie-clear marker có mặt và không trả sai session-revoked marker.
+- Không chạy hoặc thêm test theo quyết định hoãn test của chủ dự án. R21, X02, X08 và QR-01–QR-04 tiếp tục giữ nguyên trạng thái/phạm vi.
+- Toàn bộ thay đổi vẫn ở branch `feature/demo-experience-stability`, chưa commit hoặc push.
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-09-01 | Hardening auth/session Client, ghi X09–X38, kiểm chứng Release artifact; không thay đổi QR và không chạy test suite. | CHỜ XÁC NHẬN |
+
+## 15. Phụ lục sửa lỗi non-QR theo phạm vi rút gọn (append-only)
+
+### 2026-09-02 – Trạng thái X39–X47
+
+Theo quyết định của chủ dự án, lượt này chỉ xử lý lỗi rõ ràng ảnh hưởng an toàn dữ liệu hoặc khả năng demo; không tiếp tục mở rộng hardening và không kiểm tra/sửa QR.
+
+| Mã | Trạng thái mới | Phát hiện và cách xử lý |
+|---|---|---|
+| X39 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Client ánh xạ rõ lỗi session mismatch/revoked/unconfirmed thay vì hiện thông báo kỹ thuật khó hiểu. |
+| X40 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Log phía Client không còn ghi giá trị `SessionId` thô. Correlation ID vẫn được giữ để tra cứu sự cố. |
+| X41 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Phát hiện refresh-token reuse được commit trạng thái thu hồi và audit bền vững trong SQL trước; Redis/SignalR chỉ là hậu xử lý best-effort. |
+| X42 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Bổ sung validation server cho login, số tài khoản, mật khẩu giao dịch, mô tả và idempotency key; không chỉ tin validation của giao diện. |
+| X43 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Audit thất bại chỉ bắt các lỗi nghiệp vụ đã biết. Lỗi kỹ thuật hoặc lỗi sau commit không còn bị kết luận sai thành giao dịch thất bại. |
+| X44 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Request bị trình duyệt/người dùng hủy được trả và ghi log là HTTP 499, không còn bị báo nhầm 500. |
+| X45 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Chỉ lỗi concurrency hoặc unique constraint mới trả 409; lỗi lưu SQL khác trả 503 thay vì bị che thành xung đột dữ liệu. Danh sách giao dịch/audit có thứ tự phụ theo `Id` để ổn định. |
+| X46 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Admin Audit Log hiển thị Correlation ID để nối audit nghiệp vụ với Application Log. |
+| X47 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DUYỆT | Logout/hết hạn xóa dữ liệu riêng tư khỏi UI trước khi chờ Web Lock; chặn submit login/logout lặp; bỏ layout 404 lồng nhau; route lịch sử sai không còn treo “Đang tải”; tiền hiển thị 2 số lẻ, giao dịch có dấu vào/ra và thời gian/sao kê dùng UTC+7 nhất quán. |
+
+### Kiểm chứng lượt rút gọn
+
+- `dotnet format SUBank.sln --no-restore`: thành công.
+- `dotnet build SUBank.sln -c Release --no-restore`: thành công, 0 warning và 0 error.
+- Không chạy hoặc thêm test theo quyết định hiện tại.
+- QR không được kiểm tra hoặc sửa; các mục QR-01–QR-04 giữ nguyên.
+- Các thay đổi chưa commit hoặc push.
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-09-02 | Sửa gọn X39–X47 ngoài QR, đưa solution về trạng thái build xanh; dừng mở rộng hardening. | CHỜ XÁC NHẬN |
+
+## 16. Phụ lục lỗi nhập số tiền và lịch sử giao dịch (append-only)
+
+### 2026-09-02 – Trạng thái X48
+
+| Mã | Trạng thái mới | Phát hiện và cách xử lý |
+|---|---|---|
+| X48 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DEMO XÁC NHẬN | Khi Customer nhập số tiền, Blazor hiện fatal error trước khi API nhận `POST /api/transfers`. Đã bỏ `RangeAttribute(typeof(decimal), ...)` phụ thuộc chuyển đổi kiểu runtime trên WASM, kiểm tra giới hạn bằng phép so sánh `decimal` trực tiếp và đưa chuẩn hóa dữ liệu form vào `try/catch`. Áp dụng cùng cách cho form Teller deposit. |
+
+- Hoàn thiện trang lịch sử giao dịch bằng API sẵn có: chọn tài khoản, tìm kiếm, lọc tiền vào/ra, danh sách ngắn gọn, mở chi tiết và tự cập nhật sau giao dịch/SignalR; không hiển thị tổng thu chi.
+- Nút Lịch sử giao dịch được đặt ngay sau QR ở menu và thao tác trang chủ; không thay đổi chức năng QR.
+- Build Release toàn solution thành công, 0 warning và 0 error; không chạy test.
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-09-02 | Sửa X48 và hoàn thiện trải nghiệm lịch sử giao dịch ngoài QR. | CHỜ XÁC NHẬN |
+
+## 17. Phụ lục dọn user seed legacy (append-only)
+
+### 2026-09-02 – Trạng thái X49
+
+| Mã | Trạng thái mới | Phát hiện và cách xử lý |
+|---|---|---|
+| X49 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DEMO XÁC NHẬN | Trang Quản lý người dùng làm lộ hai user seed cũ `customer.a` và `customer.b` ở trạng thái ngừng hoạt động. Kiểm tra trực tiếp database xác nhận mỗi user có 0 hồ sơ, 0 tài khoản, 0 giao dịch tạo, 0 audit, 0 refresh token và 0 session; chỉ còn role Identity. Đã xóa hai bản ghi khỏi database và sửa seed để chỉ xóa legacy user không có lịch sử nghiệp vụ/audit; nếu có lịch sử thì chỉ vô hiệu hóa để bảo toàn dữ liệu. |
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-09-02 | Dọn hai user seed legacy không còn liên kết; hai Customer thật và toàn bộ lịch sử giao dịch được giữ nguyên. | CHỜ XÁC NHẬN |

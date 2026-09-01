@@ -19,7 +19,7 @@ public sealed class QuestStatementPdfGenerator : IStatementPdfGenerator
         {
             column.Item().Text("SUBank - SAO KE TAI KHOAN").Bold().FontSize(18).FontColor(Colors.Orange.Darken2);
             column.Item().Text($"Tai khoan: {statement.AccountNumber} | {statement.Currency}");
-            column.Item().Text($"Ky: {statement.FromUtc:dd/MM/yyyy} - {statement.ToUtc.AddTicks(-1):dd/MM/yyyy}");
+            column.Item().Text($"Ky: {VietnamTime(statement.FromUtc):dd/MM/yyyy} - {VietnamTime(statement.ToUtc.AddTicks(-1)):dd/MM/yyyy}");
         });
         page.Content().PaddingVertical(15).Column(column =>
         {
@@ -45,7 +45,7 @@ public sealed class QuestStatementPdfGenerator : IStatementPdfGenerator
                 });
                 foreach (var item in statement.Transactions)
                 {
-                    table.Cell().Element(BodyCell).Text(item.CreatedAtUtc.ToLocalTime().ToString("dd/MM HH:mm"));
+                    table.Cell().Element(BodyCell).Text(VietnamTime(item.CreatedAtUtc).ToString("dd/MM HH:mm"));
                     table.Cell().Element(BodyCell).Text(item.ReferenceNo);
                     table.Cell().Element(BodyCell).Text(item.Direction);
                     table.Cell().Element(BodyCell).AlignRight().Text(item.Amount.ToString("N2"));
@@ -62,4 +62,5 @@ public sealed class QuestStatementPdfGenerator : IStatementPdfGenerator
         container.Background(Colors.Grey.Lighten2).Padding(4).DefaultTextStyle(x => x.Bold());
     private static IContainer BodyCell(IContainer container) =>
         container.BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Padding(4);
+    private static DateTimeOffset VietnamTime(DateTimeOffset value) => value.ToOffset(TimeSpan.FromHours(7));
 }

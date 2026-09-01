@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using SUBank.Application.Exceptions;
 using SUBank.Domain.Entities;
@@ -8,6 +9,16 @@ namespace SUBank.Infrastructure.Banking;
 
 internal static class IdempotencyReplay
 {
+    public static bool IsUniqueConstraintViolation(DbUpdateException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException { Number: 2601 or 2627 }) return true;
+        }
+
+        return false;
+    }
+
     public static async Task<FinancialTransaction?> FindMatchingAsync(
         SUBankDbContext dbContext,
         string actorUserId,

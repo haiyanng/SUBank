@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SUBank.Application.Abstractions;
 using SUBank.Application.Exceptions;
@@ -16,11 +17,41 @@ public sealed class StaffService(
     SUBankDbContext dbContext,
     UserManager<ApplicationUser> userManager,
     IOptions<IdentityOptions> identityOptions,
-    IRealtimeNotifier realtimeNotifier) : IStaffService
+    IRealtimeNotifier realtimeNotifier,
+    ILogger<StaffService> logger) : IStaffService
 {
     public async Task<CashDepositResponse> CashDepositAsync(string tellerUserId, string idempotencyKey, CashDepositRequest request, CancellationToken cancellationToken)
     {
+        try
+        {
+            return await CashDepositCoreAsync(tellerUserId, idempotencyKey, request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is BusinessRuleException or NotFoundException or AuthenticationException or ConflictException)
+        {
+            await TryAuditFailureAsync(tellerUserId);
+            throw;
+        }
+    }
+
+    private async Task<CashDepositResponse> CashDepositCoreAsync(
+        string tellerUserId,
+        string idempotencyKey,
+        CashDepositRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null) throw new BusinessRuleException("Dữ liệu nộp tiền không hợp lệ.");
+
+        var teller = await userManager.FindByIdAsync(tellerUserId)
+            ?? throw new AuthenticationException("Người dùng không tồn tại.");
+        if (!teller.IsActive || await userManager.IsLockedOutAsync(teller))
+            throw new AuthenticationException("Tài khoản không thể thực hiện giao dịch.");
+
         BankingRules.ValidateIdempotencyKey(idempotencyKey);
+        BankingRules.ValidateAccountNumber(request.DestinationAccountNumber, "Tài khoản nhận");
         BankingRules.ValidateAmount(request.Amount);
         var description = BankingRules.NormalizeDescription(request.Description);
         var hash = BankingService.Hash(FormattableString.Invariant(
@@ -48,9 +79,15 @@ public sealed class StaffService(
             now = DateTimeOffset.UtcNow;
             item = new FinancialTransaction
             {
-                ReferenceNo = BankingService.NewReference("DEP"), DestinationAccountId = account.Id,
-                CreatedByUserId = tellerUserId, Type = TransactionType.CashDeposit, Amount = request.Amount,
-                Description = description, IdempotencyKey = idempotencyKey, RequestHash = hash, CreatedAtUtc = now
+                ReferenceNo = BankingService.NewReference("DEP"),
+                DestinationAccountId = account.Id,
+                CreatedByUserId = tellerUserId,
+                Type = TransactionType.CashDeposit,
+                Amount = request.Amount,
+                Description = description,
+                IdempotencyKey = idempotencyKey,
+                RequestHash = hash,
+                CreatedAtUtc = now
             };
             dbContext.FinancialTransactions.Add(item);
             dbContext.AuditLogs.Add(new AuditLog { UserId = tellerUserId, Action = "CASH_DEPOSIT", EntityType = "FinancialTransaction", EntityId = item.ReferenceNo, Result = AuditResult.Success, CreatedAtUtc = now });
@@ -78,7 +115,10 @@ public sealed class StaffService(
 
             if (persistenceFailure is DbUpdateConcurrencyException)
                 throw new ConflictException("Số dư vừa thay đổi. Vui lòng kiểm tra và thử lại.");
-            throw new ConflictException("Yêu cầu bị trùng hoặc dữ liệu vừa thay đổi.");
+            if (IdempotencyReplay.IsUniqueConstraintViolation(persistenceFailure))
+                throw new ConflictException("Yêu cầu bị trùng hoặc dữ liệu vừa thay đổi.");
+
+            throw new DependencyUnavailableException("Dịch vụ dữ liệu tạm thời không khả dụng.", persistenceFailure);
         }
 
         await realtimeNotifier.BalanceChangedAsync(account.CustomerProfile.UserId, account.AccountNumber, CancellationToken.None);
@@ -87,35 +127,105 @@ public sealed class StaffService(
         return new CashDepositResponse(item.ReferenceNo, item.Amount, account.AccountNumber, now, false);
     }
 
-    public async Task<IReadOnlyList<LockedUserSummary>> GetLockedUsersAsync(CancellationToken cancellationToken)
+    private async Task TryAuditFailureAsync(string tellerUserId)
+    {
+        try
+        {
+            dbContext.ChangeTracker.Clear();
+            dbContext.AuditLogs.Add(new AuditLog
+            {
+                UserId = tellerUserId,
+                Action = "CASH_DEPOSIT_FAILED",
+                Result = AuditResult.Failure,
+                CreatedAtUtc = DateTimeOffset.UtcNow
+            });
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Không thể ghi audit cho nghiệp vụ nộp tiền thất bại");
+        }
+    }
+
+    public async Task<IReadOnlyList<UserManagementSummary>> GetUsersAsync(CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
         var lockoutThreshold = identityOptions.Value.Lockout.MaxFailedAccessAttempts;
-        return await userManager.Users.AsNoTracking()
-            .Where(x => x.LockoutEnd != null && x.LockoutEnd > now)
+        var users = await userManager.Users.AsNoTracking()
             .OrderBy(x => x.UserName)
-            .Select(x => new LockedUserSummary(x.UserName!,
-                x.AccessFailedCount == 0 ? lockoutThreshold : x.AccessFailedCount,
-                x.LockedAtUtc))
+            .Select(x => new
+            {
+                x.Id,
+                x.UserName,
+                x.IsActive,
+                x.LockoutEnabled,
+                x.LockoutEnd,
+                x.AccessFailedCount,
+                x.LockedAtUtc
+            })
             .ToListAsync(cancellationToken);
+
+        if (users.Count == 0) return [];
+
+        var userIds = users.Select(x => x.Id).ToList();
+        var roleAssignments = await (
+                from userRole in dbContext.UserRoles.AsNoTracking()
+                join role in dbContext.Roles.AsNoTracking() on userRole.RoleId equals role.Id
+                where userIds.Contains(userRole.UserId)
+                select new { userRole.UserId, role.Name })
+            .ToListAsync(cancellationToken);
+        var rolesByUser = roleAssignments
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .GroupBy(x => x.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.Name!).Distinct(StringComparer.Ordinal).OrderBy(x => x).ToArray(),
+                StringComparer.Ordinal);
+
+        return users.Select(user =>
+        {
+            var isLocked = user.LockoutEnabled && user.LockoutEnd is { } lockoutEnd && lockoutEnd > now;
+            var failedAttempts = isLocked && user.AccessFailedCount == 0
+                ? lockoutThreshold
+                : user.AccessFailedCount;
+            var roles = rolesByUser.TryGetValue(user.Id, out var assignedRoles)
+                ? assignedRoles
+                : [];
+            return new UserManagementSummary(
+                user.UserName ?? string.Empty,
+                roles,
+                user.IsActive,
+                isLocked,
+                failedAttempts,
+                user.LockedAtUtc);
+        }).ToList();
     }
+
+    public async Task<IReadOnlyList<LockedUserSummary>> GetLockedUsersAsync(CancellationToken cancellationToken) =>
+        (await GetUsersAsync(cancellationToken))
+            .Where(x => x.IsLocked)
+            .Select(x => new LockedUserSummary(x.UserName, x.FailedAttempts, x.LockedAtUtc))
+            .ToList();
 
     public async Task<IReadOnlyList<AuditLogSummary>> GetAuditLogsAsync(CancellationToken cancellationToken) =>
         await dbContext.AuditLogs.AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
             .Take(200)
-            .Select(x => new AuditLogSummary(x.Id, x.UserId, x.Action, x.EntityType, x.EntityId, x.Result.ToString(), x.CreatedAtUtc))
+            .Select(x => new AuditLogSummary(x.Id, x.UserId, x.Action, x.EntityType, x.EntityId, x.Result.ToString(), x.CreatedAtUtc, x.CorrelationId))
             .ToListAsync(cancellationToken);
 
     public async Task UnlockUserAsync(string adminUserId, string userName, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByNameAsync(userName) ?? throw new NotFoundException("Không tìm thấy người dùng.");
-        await userManager.SetLockoutEndDateAsync(user, null);
-        await userManager.ResetAccessFailedCountAsync(user);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        EnsureIdentityUpdateSucceeded(await userManager.SetLockoutEndDateAsync(user, null));
+        EnsureIdentityUpdateSucceeded(await userManager.ResetAccessFailedCountAsync(user));
         user.LockedAtUtc = null;
-        await userManager.UpdateAsync(user);
+        EnsureIdentityUpdateSucceeded(await userManager.UpdateAsync(user));
         dbContext.AuditLogs.Add(new AuditLog { UserId = adminUserId, Action = "UNLOCK_USER", EntityType = "ApplicationUser", EntityId = user.Id, Result = AuditResult.Success, CreatedAtUtc = DateTimeOffset.UtcNow });
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static CashDepositResponse ToCashDepositResponse(FinancialTransaction transaction, bool replayed) =>
@@ -125,4 +235,10 @@ public sealed class StaffService(
             transaction.DestinationAccount.AccountNumber,
             transaction.CreatedAtUtc,
             replayed);
+
+    private static void EnsureIdentityUpdateSucceeded(IdentityResult result)
+    {
+        if (!result.Succeeded)
+            throw new DependencyUnavailableException("Không thể cập nhật trạng thái tài khoản.");
+    }
 }

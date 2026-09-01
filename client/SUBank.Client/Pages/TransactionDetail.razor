@@ -9,10 +9,16 @@
         <h1 class="mb-1">Chi tiết giao dịch</h1>
         <p>Thông tin được truy xuất trực tiếp theo mã tham chiếu.</p>
     </div>
-    <a class="btn btn-outline-secondary" href="accounts">Quay lại tài khoản</a>
+    <a class="btn btn-outline-secondary" href="/transactions">Quay lại lịch sử</a>
 </div>
 
-@if (error is not null) { <div class="alert alert-danger" role="alert">@error</div> }
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        <p class="mb-2">@error</p>
+        <button class="btn btn-outline-danger btn-sm" type="button" @onclick="LoadAsync">Thử lại</button>
+    </div>
+}
 else if (item is null) { <div class="loading-state">Đang tải chi tiết giao dịch...</div> }
 else
 {
@@ -21,7 +27,7 @@ else
             <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-3 mb-3">
                 <div>
                     <div class="metric-label">Số tiền giao dịch</div>
-                    <div class="h2 fw-bold money mb-0">@item.Amount.ToString("N0") VND</div>
+                    <div class="h2 fw-bold money mb-0">@item.Amount.ToString("N2") VND</div>
                 </div>
                 <span class="badge rounded-pill text-bg-success align-self-start align-self-sm-center">Hoàn tất</span>
             </div>
@@ -31,7 +37,7 @@ else
                 <div><dt>Tài khoản nguồn</dt><dd>@(item.SourceAccountNumber ?? "Tiền mặt")</dd></div>
                 <div><dt>Tài khoản nhận</dt><dd>@item.DestinationAccountNumber</dd></div>
                 <div><dt>Nội dung</dt><dd>@(item.Description ?? "—")</dd></div>
-                <div><dt>Thời gian</dt><dd>@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd></div>
+                <div><dt>Thời gian</dt><dd>@item.CreatedAtUtc.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm:ss")</dd></div>
             </dl>
         </div>
     </article>
@@ -41,9 +47,26 @@ else
     [Parameter] public string ReferenceNo { get; set; } = "";
     private SUBank.Contracts.Transactions.TransactionDetail? item;
     private string? error;
-    protected override async Task OnParametersSetAsync()
+    private long loadVersion;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
-        try { item = await Session.GetTransactionAsync(ReferenceNo); }
-        catch (Exception ex) { error = ex.Message; }
+        var referenceNo = ReferenceNo;
+        var version = Interlocked.Increment(ref loadVersion);
+        item = null;
+        error = null;
+        try
+        {
+            var loadedItem = await Session.GetTransactionAsync(referenceNo);
+            if (version == loadVersion && string.Equals(referenceNo, ReferenceNo, StringComparison.Ordinal))
+                item = loadedItem;
+        }
+        catch (Exception exception)
+        {
+            if (version == loadVersion && string.Equals(referenceNo, ReferenceNo, StringComparison.Ordinal))
+                error = ClientErrorMessage.From(exception);
+        }
     }
 }

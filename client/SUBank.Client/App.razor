@@ -2,11 +2,20 @@
 @inject ApiSession Session
 @inject RealtimeService Realtime
 
-@if (!initialized)
+@if (bootstrapState == BootstrapState.Restoring)
 {
     <div class="session-bootstrap" role="status" aria-live="polite">
         <span class="spinner-border" aria-hidden="true"></span>
         <strong>Đang khôi phục phiên...</strong>
+    </div>
+}
+else if (bootstrapState == BootstrapState.Failed)
+{
+    <div class="session-bootstrap text-center px-3" role="alert" aria-live="assertive">
+        <div class="eyebrow">Kết nối dịch vụ</div>
+        <h1 class="h3 text-white mb-0">Chưa thể khôi phục phiên</h1>
+        <p class="text-white-50 mb-0">@bootstrapError</p>
+        <button class="btn btn-primary" type="button" @onclick="RestoreSessionAsync">Thử lại</button>
     </div>
 }
 else
@@ -16,6 +25,10 @@ else
             @if (Session.Current is null && RequiresAuthentication(routeData.PageType))
             {
                 <RedirectToLogin />
+            }
+            else if (Session.Current is not null && !CanAccess(routeData.PageType))
+            {
+                <RedirectToForbidden />
             }
             else
             {
@@ -27,31 +40,84 @@ else
 }
 
 @code {
-    private bool initialized;
+    private static readonly HashSet<Type> PublicPages =
+    [
+        typeof(Pages.Login),
+        typeof(Pages.Forbidden),
+        typeof(Pages.NotFound)
+    ];
+
+    private static readonly IReadOnlyDictionary<Type, string[]> RequiredRoles =
+        new Dictionary<Type, string[]>
+        {
+            [typeof(Pages.Accounts)] = ["Customer"],
+            [typeof(Pages.Transfer)] = ["Customer"],
+            [typeof(Pages.Statements)] = ["Customer"],
+            [typeof(Pages.Transactions)] = ["Customer"],
+            [typeof(Pages.TransactionDetail)] = ["Customer"],
+            [typeof(Pages.Profile)] = ["Customer"],
+            [typeof(Pages.QrTransfer)] = ["Customer"],
+            [typeof(Pages.StaffDeposit)] = ["Teller"],
+            [typeof(Pages.StaffUsers)] = ["Admin"],
+            [typeof(Pages.StaffAudit)] = ["Admin"]
+        };
+
+    private BootstrapState bootstrapState = BootstrapState.Restoring;
+    private string? bootstrapError;
 
     protected override async Task OnInitializedAsync()
     {
         Session.Changed += OnSessionChanged;
+        await RestoreSessionAsync();
+    }
+
+    private async Task RestoreSessionAsync()
+    {
+        bootstrapState = BootstrapState.Restoring;
+        bootstrapError = null;
+
         try
         {
             await Session.TryRestoreAsync();
-            await Realtime.SyncAsync();
+            bootstrapState = BootstrapState.Ready;
         }
-        catch (HttpRequestException)
+        catch (Exception exception)
         {
-            // API không truy cập được: tiếp tục tới login để người dùng nhận thông báo phù hợp khi thử đăng nhập.
-        }
-        finally
-        {
-            initialized = true;
+            bootstrapError = DescribeBootstrapFailure(exception);
+            bootstrapState = BootstrapState.Failed;
         }
     }
 
-    private static bool RequiresAuthentication(Type pageType) =>
-        pageType != typeof(Pages.Login) &&
-        pageType != typeof(Pages.Forbidden) &&
-        pageType != typeof(Pages.NotFound);
+    private static bool RequiresAuthentication(Type pageType) => !PublicPages.Contains(pageType);
 
-    private void OnSessionChanged() => _ = InvokeAsync(Realtime.SyncAsync);
+    private bool CanAccess(Type pageType)
+    {
+        if (PublicPages.Contains(pageType)) return true;
+
+        return RequiredRoles.TryGetValue(pageType, out var roles) &&
+            roles.Any(Session.IsInRole);
+    }
+
+    private static string DescribeBootstrapFailure(Exception exception) => exception switch
+    {
+        ApiRequestException apiException => apiException.Message,
+        HttpRequestException => "Không thể kết nối đến dịch vụ SUBank. Vui lòng kiểm tra kết nối và thử lại.",
+        TaskCanceledException => "Dịch vụ phản hồi quá chậm. Vui lòng thử lại.",
+        InvalidOperationException => exception.Message,
+        _ => "Không thể khôi phục phiên lúc này. Vui lòng thử lại."
+    };
+
+    private void OnSessionChanged() => _ = InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        await Realtime.SyncAsync();
+    });
     public void Dispose() => Session.Changed -= OnSessionChanged;
+
+    private enum BootstrapState
+    {
+        Restoring,
+        Ready,
+        Failed
+    }
 }

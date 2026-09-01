@@ -35,8 +35,9 @@
                 <NavLink class="sidebar-link" href="accounts" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌂</span><span>Trang chủ</span></NavLink>
                 <NavLink class="sidebar-link" href="transfer" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⇄</span><span>Chuyển tiền</span></NavLink>
                 <NavLink class="sidebar-link" href="qr" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌗</span><span>QR</span></NavLink>
+                <NavLink class="sidebar-link" href="transactions" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◷</span><span>Lịch sử giao dịch</span></NavLink>
                 <NavLink class="sidebar-link" href="statements" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">▤</span><span>Sao kê</span></NavLink>
-                <NavLink class="sidebar-link" href="profile" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◎</span><span>Thông tin khách hàng</span></NavLink>
+                <NavLink class="sidebar-link" href="profile" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◎</span><span>Thông tin cá nhân</span></NavLink>
             }
 
             @if (Session.IsInRole("Teller"))
@@ -48,7 +49,7 @@
             @if (Session.IsInRole("Admin"))
             {
                 <span class="nav-section-label">Quản trị hệ thống</span>
-                <NavLink class="sidebar-link" href="staff/users" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">♙</span><span>Người dùng bị khóa</span></NavLink>
+                <NavLink class="sidebar-link" href="staff/users" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">♙</span><span>Quản lý người dùng</span></NavLink>
                 <NavLink class="sidebar-link" href="staff/audit" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">≡</span><span>Nhật ký kiểm toán</span></NavLink>
             }
         </nav>
@@ -64,7 +65,9 @@
                     <span class="user-avatar" aria-hidden="true">@UserInitial</span>
                     <span class="user-copy"><small>@RoleDisplay</small><strong>@UserDisplayName</strong></span>
                 </div>
-                <button class="logout-button" type="button" @onclick="LogoutAsync">Đăng xuất <span aria-hidden="true">→</span></button>
+                <button class="logout-button" type="button" disabled="@logoutBusy" @onclick="LogoutAsync">
+                    @(logoutBusy ? "Đang đăng xuất..." : "Đăng xuất") <span aria-hidden="true">→</span>
+                </button>
             }
         </div>
     </aside>
@@ -72,6 +75,7 @@
 
 @code {
     private bool collapseNavMenu = true;
+    private bool logoutBusy;
     private string SidebarCssClass => collapseNavMenu ? string.Empty : "is-open";
     private string HomeUrl => Session.IsInRole("Customer")
         ? "accounts"
@@ -109,9 +113,35 @@
 
     private async Task LogoutAsync()
     {
+        if (logoutBusy) return;
+
+        logoutBusy = true;
         CloseMenu();
-        await Session.LogoutAsync();
-        Navigation.NavigateTo("/");
+        try
+        {
+            await Session.LogoutAsync();
+            Navigation.NavigateTo("/");
+        }
+        catch (LogoutNotConfirmedException)
+        {
+            Navigation.NavigateTo("/login?reason=logout-unconfirmed", replace: true);
+        }
+        catch (ApiRequestException)
+        {
+            Navigation.NavigateTo("/login?reason=logout-unconfirmed", replace: true);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            Navigation.NavigateTo("/login?reason=logout-unconfirmed", replace: true);
+        }
+        catch
+        {
+            Navigation.NavigateTo("/login?reason=logout-unconfirmed", replace: true);
+        }
+        finally
+        {
+            logoutBusy = false;
+        }
     }
 
     public void Dispose() => Session.Changed -= Refresh;

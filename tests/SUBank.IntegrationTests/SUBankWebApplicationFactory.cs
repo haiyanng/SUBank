@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using SUBank.Application.Abstractions;
 using SUBank.Api.Realtime;
+using SUBank.Application.Abstractions;
 
 namespace SUBank.IntegrationTests;
 
@@ -15,6 +15,10 @@ public sealed class SUBankWebApplicationFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("ConnectionStrings:DefaultConnection",
             "Server=(localdb)\\MSSQLLocalDB;Database=SUBankV2_Integration;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False");
+        builder.UseSetting("DatabaseInitialization:ApplyMigrationsOnStartup", "true");
+        builder.UseSetting("DatabaseInitialization:SeedDemoData", "true");
+        builder.UseSetting("DatabaseInitialization:AllowedSeedDataSource", "(localdb)\\MSSQLLocalDB");
+        builder.UseSetting("DatabaseInitialization:AllowedSeedDatabase", "SUBankV2_Integration");
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IActiveSessionStore>();

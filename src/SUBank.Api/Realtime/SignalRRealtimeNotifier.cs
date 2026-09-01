@@ -7,6 +7,7 @@ namespace SUBank.Api.Realtime;
 public sealed class SignalRRealtimeNotifier(
     IHubContext<BankingHub> hub,
     IActiveSessionStore activeSessions,
+    IActiveSessionValidator sessionValidator,
     ILogger<SignalRRealtimeNotifier> logger)
     : IRealtimeNotifier
 {
@@ -31,6 +32,7 @@ public sealed class SignalRRealtimeNotifier(
         {
             var sessionId = await activeSessions.GetActiveSessionIdAsync(userId, cancellationToken);
             if (string.IsNullOrWhiteSpace(sessionId)) return;
+            if (!await sessionValidator.IsValidAsync(userId, sessionId, cancellationToken)) return;
 
             await SendBestEffortAsync(RealtimeGroups.Session(sessionId), method, payload, cancellationToken);
         }
