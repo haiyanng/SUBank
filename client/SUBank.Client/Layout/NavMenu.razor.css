@@ -106,10 +106,55 @@
 }
 
 .user-summary { display: flex; align-items: center; gap: .65rem; min-width: 0; }
+.user-summary-button {
+    width: 100%;
+    padding: 0;
+    color: inherit;
+    border: 0;
+    background: transparent;
+    text-align: left;
+}
+.user-summary-button:hover .user-copy strong { color: var(--su-gold-soft); }
 .user-avatar { width: 2.1rem; height: 2.1rem; flex: 0 0 2.1rem; display: grid; place-items: center; color: #17120a; border-radius: 50%; background: var(--su-gold); font-size: .8rem; font-weight: 850; }
 .user-copy { min-width: 0; display: flex; flex-direction: column; }
 .user-copy small { color: rgba(255, 255, 255, .46); font-size: .64rem; }
 .user-copy strong { overflow: hidden; color: #fff; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.user-chevron { margin-left: auto; color: var(--su-gold-soft); font-size: .8rem; }
+
+.user-account-menu {
+    margin-top: .7rem;
+    padding: .35rem;
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: .7rem;
+    background: rgba(0, 0, 0, .22);
+}
+
+.user-account-action {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .5rem .55rem;
+    color: rgba(255, 255, 255, .8);
+    border: 0;
+    border-radius: .5rem;
+    background: transparent;
+    font-size: .72rem;
+    font-weight: 650;
+    text-align: left;
+}
+
+.user-account-action:hover { color: #fff; background: rgba(255, 255, 255, .07); }
+
+.user-account-notice {
+    margin: .35rem .35rem .2rem;
+    padding: .55rem;
+    color: var(--su-gold-soft);
+    border-radius: .5rem;
+    background: rgba(181, 138, 50, .12);
+    font-size: .68rem;
+    line-height: 1.45;
+}
 
 .logout-button,
 .sidebar-login {

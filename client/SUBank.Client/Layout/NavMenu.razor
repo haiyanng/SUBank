@@ -61,10 +61,38 @@
             }
             else
             {
-                <div class="user-summary">
-                    <span class="user-avatar" aria-hidden="true">@UserInitial</span>
-                    <span class="user-copy"><small>@RoleDisplay</small><strong>@UserDisplayName</strong></span>
-                </div>
+                @if (Session.IsInRole("Customer"))
+                {
+                    <button class="user-summary user-summary-button" type="button"
+                            aria-expanded="@userMenuOpen" @onclick="ToggleUserMenu">
+                        <span class="user-avatar" aria-hidden="true">@UserInitial</span>
+                        <span class="user-copy"><small>@RoleDisplay</small><strong>@UserDisplayName</strong></span>
+                        <span class="user-chevron" aria-hidden="true">@(userMenuOpen ? "⌃" : "⌄")</span>
+                    </button>
+
+                    @if (userMenuOpen)
+                    {
+                        <div class="user-account-menu">
+                            <button type="button" class="user-account-action" @onclick="ShowPasswordPlaceholder">
+                                <span>Đổi mật khẩu</span><span aria-hidden="true">›</span>
+                            </button>
+                            <button type="button" class="user-account-action" @onclick="ShowCloseAccountNotice">
+                                <span>Đóng tài khoản</span><span aria-hidden="true">›</span>
+                            </button>
+                            @if (userActionMessage is not null)
+                            {
+                                <p class="user-account-notice" role="status">@userActionMessage</p>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="user-summary">
+                        <span class="user-avatar" aria-hidden="true">@UserInitial</span>
+                        <span class="user-copy"><small>@RoleDisplay</small><strong>@UserDisplayName</strong></span>
+                    </div>
+                }
                 <button class="logout-button" type="button" disabled="@logoutBusy" @onclick="LogoutAsync">
                     @(logoutBusy ? "Đang đăng xuất..." : "Đăng xuất") <span aria-hidden="true">→</span>
                 </button>
@@ -76,6 +104,10 @@
 @code {
     private bool collapseNavMenu = true;
     private bool logoutBusy;
+    private bool userMenuOpen;
+    private string? customerFullName;
+    private string? userActionMessage;
+    private long customerNameLoadVersion;
     private string SidebarCssClass => collapseNavMenu ? string.Empty : "is-open";
     private string HomeUrl => Session.IsInRole("Customer")
         ? "accounts"
@@ -91,7 +123,7 @@
         ? "S"
         : Session.Current.User.UserName[..1].ToUpperInvariant();
     private string UserDisplayName => Session.IsInRole("Customer")
-        ? MaskPhone(Session.Current?.User.UserName)
+        ? customerFullName ?? MaskPhone(Session.Current?.User.UserName)
         : Session.Current?.User.UserName ?? "SUBank";
     private string RoleDisplay => PrimaryRole switch
     {
@@ -102,14 +134,65 @@
     };
 
     private void ToggleNavMenu() => collapseNavMenu = !collapseNavMenu;
-    private void CloseMenu() => collapseNavMenu = true;
+    private void CloseMenu()
+    {
+        collapseNavMenu = true;
+        userMenuOpen = false;
+        userActionMessage = null;
+    }
+
+    private void ToggleUserMenu()
+    {
+        userMenuOpen = !userMenuOpen;
+        if (!userMenuOpen) userActionMessage = null;
+    }
+
+    private void ShowPasswordPlaceholder() =>
+        userActionMessage = "Chức năng đổi mật khẩu sẽ được bổ sung sau.";
+
+    private void ShowCloseAccountNotice() =>
+        userActionMessage = "Quý khách vui lòng đến điểm giao dịch gần nhất để đóng tài khoản";
 
     private static string MaskPhone(string? value) => value is { Length: 10 }
         ? $"{value[..3]}****{value[^3..]}"
         : "Khách hàng SUBank";
 
-    protected override void OnInitialized() => Session.Changed += Refresh;
-    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += Refresh;
+        await LoadCustomerNameAsync();
+    }
+
+    private void Refresh() => _ = InvokeAsync(RefreshUserSummaryAsync);
+
+    private async Task RefreshUserSummaryAsync()
+    {
+        userMenuOpen = false;
+        userActionMessage = null;
+        await LoadCustomerNameAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadCustomerNameAsync()
+    {
+        var version = Interlocked.Increment(ref customerNameLoadVersion);
+        if (!Session.IsInRole("Customer"))
+        {
+            customerFullName = null;
+            return;
+        }
+
+        try
+        {
+            var profile = await Session.GetProfileAsync();
+            if (version == customerNameLoadVersion)
+                customerFullName = string.IsNullOrWhiteSpace(profile?.FullName) ? null : profile.FullName;
+        }
+        catch
+        {
+            if (version == customerNameLoadVersion) customerFullName = null;
+        }
+    }
 
     private async Task LogoutAsync()
     {
@@ -144,5 +227,9 @@
         }
     }
 
-    public void Dispose() => Session.Changed -= Refresh;
+    public void Dispose()
+    {
+        Interlocked.Increment(ref customerNameLoadVersion);
+        Session.Changed -= Refresh;
+    }
 }

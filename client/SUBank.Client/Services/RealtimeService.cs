@@ -111,21 +111,17 @@ public sealed class RealtimeService(ApiSession session, HttpClient httpClient, N
             NotifyMessageChanged();
             navigation.NavigateTo($"/login?reason={reason}");
         });
-        nextConnection.On<BalanceChangedNotification>("BalanceChanged", notification =>
+        nextConnection.On<BalanceChangedNotification>("BalanceChanged", _ =>
         {
             if (!IsCurrentConnection(nextConnection, generation)) return;
 
-            LastMessage = $"Số dư tài khoản {notification.AccountNumber} vừa thay đổi.";
             session.NotifyBankingDataChanged();
-            NotifyMessageChanged();
         });
-        nextConnection.On<TransactionReceivedNotification>("TransactionReceived", notification =>
+        nextConnection.On<TransactionReceivedNotification>("TransactionReceived", _ =>
         {
             if (!IsCurrentConnection(nextConnection, generation)) return;
 
-            LastMessage = $"Có cập nhật giao dịch {notification.ReferenceNo}.";
             session.NotifyBankingDataChanged();
-            NotifyMessageChanged();
         });
         nextConnection.Reconnecting += _ =>
         {

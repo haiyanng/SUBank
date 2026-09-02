@@ -42,7 +42,7 @@ else
 
                         <div class="mb-3">
                             <label class="form-label" for="source">Tài khoản nguồn</label>
-                            <InputSelect id="source" class="form-select" @bind-Value="model.Source">
+                            <InputSelect @key="accountListVersion" id="source" class="form-select" @bind-Value="model.Source">
                                 @foreach (var account in accounts)
                                 {
                                     <option value="@account.AccountNumber">@account.AccountNumber - @account.Balance.ToString("N2") VND</option>
@@ -103,9 +103,6 @@ else
                         <li class="mb-2">Giao dịch thành công sẽ cập nhật số dư realtime.</li>
                         <li>Không chia sẻ mật khẩu giao dịch cho người khác.</li>
                     </ul>
-                    <hr />
-                    <div class="metric-label">Số tiền đang nhập</div>
-                    <div class="h2 money">@model.Amount.ToString("N2") VND</div>
                 </div>
             </div>
         </div>
@@ -133,6 +130,7 @@ else
     private bool loadingAccounts = true;
     private bool success;
     private bool busy;
+    private long accountListVersion;
 
     protected override Task OnInitializedAsync() => LoadAccountsAsync();
 
@@ -149,11 +147,7 @@ else
         accountLoadError = null;
         try
         {
-            accounts.Clear();
-            accounts.AddRange(await Session.GetAccountsAsync() ?? []);
-            model.Source = accounts.FirstOrDefault(x => x.AccountNumber == Source)?.AccountNumber
-                ?? accounts.FirstOrDefault()?.AccountNumber
-                ?? string.Empty;
+            await RefreshAccountsAsync(Source);
         }
         catch (Exception exception)
         {
@@ -163,6 +157,19 @@ else
         {
             loadingAccounts = false;
         }
+    }
+
+    private async Task RefreshAccountsAsync(string? preferredSource)
+    {
+        var refreshedAccounts = await Session.GetAccountsAsync() ?? [];
+
+        accounts.Clear();
+        accounts.AddRange(refreshedAccounts);
+        model.Source = accounts.FirstOrDefault(x => x.AccountNumber == preferredSource)?.AccountNumber
+            ?? accounts.FirstOrDefault(x => x.AccountNumber == model.Source)?.AccountNumber
+            ?? accounts.FirstOrDefault()?.AccountNumber
+            ?? string.Empty;
+        accountListVersion++;
     }
 
     private async Task SubmitAsync()
@@ -187,6 +194,15 @@ else
             model.Description = null;
             success = true;
             message = $"Chuyển tiền thành công. Mã giao dịch: {result?.ReferenceNo}";
+
+            try
+            {
+                await RefreshAccountsAsync(source);
+            }
+            catch
+            {
+                message += " Số dư chưa thể cập nhật tự động; hãy tải lại trang.";
+            }
         }
         catch (Exception exception)
         {

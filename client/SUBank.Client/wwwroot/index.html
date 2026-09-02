@@ -368,26 +368,6 @@
                 }
             };
         })();
-        window.subankCamera = {
-            start: async (id) => {
-                const video = document.getElementById(id);
-                video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-                await video.play();
-            },
-            capture: (id) => {
-                const video = document.getElementById(id);
-                const canvas = document.createElement('canvas');
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                canvas.getContext('2d').drawImage(video, 0, 0);
-                return canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
-            },
-            stop: (id) => {
-                const video = document.getElementById(id);
-                if (video?.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
-                if (video) video.srcObject = null;
-            }
-        };
     </script>
 </body>
 </html>

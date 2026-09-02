@@ -1,7 +1,5 @@
 @page "/qr"
-@implements IAsyncDisposable
 @inject ApiSession Session
-@inject IJSRuntime JS
 @inject NavigationManager Navigation
 
 <PageTitle>QR · SUBank</PageTitle><div class="page-heading"><div><div class="eyebrow">QR nội bộ</div><h1 class="mb-1">QR</h1><p>Tạo mã nhận tiền hoặc quét ảnh để điền trước giao dịch.</p></div></div>
@@ -37,10 +35,17 @@
 </div></div></div>
 <div class="col-12 col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
     <h2 class="h4">Quét QR chuyển tiền</h2>
-    <video id="subank-qr-camera" class="w-100 bg-dark rounded mb-2" playsinline></video>
-    <button class="btn btn-outline-primary me-2" @onclick="StartCameraAsync">Mở camera</button>
-    <button class="btn btn-primary me-2" disabled="@busy" @onclick="CaptureAsync">Chụp và quét</button>
-    <InputFile class="form-control mt-3" OnChange="UploadAsync" accept="image/png,image/jpeg,image/webp" />
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <label for="qr-camera-input" class="btn btn-primary @(busy ? "disabled" : null)"
+               role="button" aria-disabled="@busy">Quét</label>
+        <InputFile id="qr-camera-input" class="visually-hidden" disabled="@busy"
+                   OnChange="UploadAsync" accept="image/*" capture="environment" />
+
+        <label for="qr-image-input" class="btn btn-outline-primary @(busy ? "disabled" : null)"
+               role="button" aria-disabled="@busy">Tải ảnh</label>
+        <InputFile id="qr-image-input" class="visually-hidden" disabled="@busy"
+                   OnChange="UploadAsync" accept="image/png,image/jpeg,image/webp" />
+    </div>
     @if (decoded is not null) { <div class="alert alert-success mt-3"><div>Tài khoản: <strong>@decoded.AccountNumber</strong></div><div>Số tiền: @(decoded.Amount?.ToString("N2") ?? "Chưa nhập")</div><div>Nội dung: @decoded.Message</div><button class="btn btn-success mt-2" @onclick="ContinueTransfer">Tiếp tục chuyển tiền</button></div> }
 </div></div></div></div>
 @code {
@@ -77,10 +82,7 @@
     private static string GetAccountOptionLabel(AccountSummary account)
         => $"{account.AccountNumber} · {account.Balance:N2} {account.Currency}";
     private async Task GenerateAsync() { await RunAsync(async () => generated = await Session.GenerateQrAsync(new(generateAccount, generateAmount, generateMessage))); }
-    private async Task StartCameraAsync() { try { await JS.InvokeVoidAsync("subankCamera.start", "subank-qr-camera"); } catch { error = "Không mở được camera. Hãy cấp quyền camera hoặc tải ảnh QR lên."; } }
-    private async Task CaptureAsync() { await RunAsync(async () => { var base64 = await JS.InvokeAsync<string>("subankCamera.capture", "subank-qr-camera"); decoded = await Session.DecodeQrAsync(Convert.FromBase64String(base64), "camera.jpg", "image/jpeg"); }); }
     private async Task UploadAsync(InputFileChangeEventArgs args) { await RunAsync(async () => { var file = args.File; await using var stream = file.OpenReadStream(MaxImageBytes); using var memory = new MemoryStream(); await stream.CopyToAsync(memory); decoded = await Session.DecodeQrAsync(memory.ToArray(), file.Name, file.ContentType); }); }
     private void ContinueTransfer() { if (decoded is null) return; var amount = decoded.Amount?.ToString("0.00", CultureInfo.InvariantCulture) ?? ""; Navigation.NavigateTo($"/transfer?destination={Uri.EscapeDataString(decoded.AccountNumber)}&amount={amount}&description={Uri.EscapeDataString(decoded.Message ?? "")}"); }
     private async Task RunAsync(Func<Task> action) { busy = true; error = null; try { await action(); } catch (Exception exception) { error = exception.Message; } finally { busy = false; } }
-    public async ValueTask DisposeAsync() { try { await JS.InvokeVoidAsync("subankCamera.stop", "subank-qr-camera"); } catch { } }
 }
