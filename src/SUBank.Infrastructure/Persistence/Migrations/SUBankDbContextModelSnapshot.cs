@@ -155,63 +155,6 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("SUBank.Domain.Entities.AddressChangeRequest", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("CustomerProfileId")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTimeOffset?>("DecidedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("DecidedByUserId")
-                        .HasColumnType("nvarchar(450)");
-
-                    b.Property<string>("PermanentAddress")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<string>("RejectionReason")
-                        .HasMaxLength(280)
-                        .HasColumnType("nvarchar(280)");
-
-                    b.Property<string>("RequestNo")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(30)");
-
-                    b.Property<DateTimeOffset>("RequestedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(20)");
-
-                    b.Property<string>("TemporaryAddress")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DecidedByUserId");
-
-                    b.HasIndex("RequestNo")
-                        .IsUnique();
-
-                    b.HasIndex("CustomerProfileId", "Status");
-
-                    b.ToTable("AddressChangeRequests", (string)null);
-                });
-
             modelBuilder.Entity("SUBank.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<long>("Id")
@@ -352,7 +295,7 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
-                    b.Property<string>("IdentityNumber")
+                    b.Property<string>("IdentityCardNumber")
                         .IsRequired()
                         .HasMaxLength(20)
                         .IsUnicode(false)
@@ -385,7 +328,7 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                     b.HasIndex("Email")
                         .IsUnique();
 
-                    b.HasIndex("IdentityNumber")
+                    b.HasIndex("IdentityCardNumber")
                         .IsUnique();
 
                     b.HasIndex("Phone")
@@ -570,6 +513,17 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("AdminSuspendedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AdminSuspendedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("AdminSuspensionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -588,6 +542,11 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
+
+                    b.Property<bool>("IsAdminSuspended")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<DateTimeOffset?>("LockedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -691,22 +650,6 @@ namespace SUBank.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-                });
-
-            modelBuilder.Entity("SUBank.Domain.Entities.AddressChangeRequest", b =>
-                {
-                    b.HasOne("SUBank.Domain.Entities.CustomerProfile", "CustomerProfile")
-                        .WithMany()
-                        .HasForeignKey("CustomerProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SUBank.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("DecidedByUserId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.Navigation("CustomerProfile");
                 });
 
             modelBuilder.Entity("SUBank.Domain.Entities.AuditLog", b =>

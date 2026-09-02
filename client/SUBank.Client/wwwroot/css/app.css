@@ -186,15 +186,11 @@ textarea.form-control { min-height: 90px; }
 .chevron.is-open { transform: rotate(180deg); }
 
 .account-menu {
-    position: absolute;
-    top: auto;
-    bottom: 5.15rem;
-    right: 1.5rem;
-    z-index: 10;
-    width: min(20rem, calc(100% - 3rem));
-    max-height: min(14rem, calc(100% - 5.8rem));
+    width: min(100%, 32rem);
+    max-height: min(20rem, 48vh);
     overflow-x: hidden;
     overflow-y: auto;
+    margin: .75rem 0 0 auto;
     padding: .45rem;
     color: var(--su-ink);
     border: 1px solid #ded7c8;
@@ -232,6 +228,65 @@ textarea.form-control { min-height: 90px; }
 .quick-action-icon svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .quick-action-icon.qr-icon svg { width: 1.45rem; height: 1.45rem; stroke-width: 1.6; }
 .quick-action strong { font-size: .84rem; }
+
+.history-controls { overflow: visible; }
+.history-toolbar { display: grid; grid-template-columns: minmax(15rem, .8fr) minmax(18rem, 1.2fr); gap: 1rem; }
+.history-account-filter,
+.history-search { min-width: 0; }
+.history-search-box { position: relative; }
+.history-search-box svg { position: absolute; top: 50%; left: .9rem; width: 1.15rem; height: 1.15rem; fill: none; stroke: var(--su-muted); stroke-width: 1.8; stroke-linecap: round; transform: translateY(-50%); pointer-events: none; }
+.history-search-box .form-control { padding-left: 2.75rem; }
+.history-filter-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.history-filter { padding: .45rem .85rem; color: #5b5f67; border: 1px solid var(--su-border); border-radius: 999px; background: #fff; font-size: .8rem; font-weight: 750; }
+.history-filter:hover { color: #4d3913; border-color: #d8bf8a; background: #fffaf0; }
+.history-filter.is-active { color: #211806; border-color: var(--su-gold); background: var(--su-gold-soft); }
+.history-filter:focus-visible { outline: 3px solid rgba(181, 138, 50, .2); outline-offset: 2px; }
+
+.user-management-search { display: grid; grid-template-columns: minmax(16rem, 1fr) auto auto; align-items: end; gap: .75rem; }
+.user-management-search .form-label { margin-bottom: .4rem; }
+.user-status-list,
+.user-detail-status { display: flex; flex-wrap: wrap; gap: .4rem; }
+.user-phone { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.user-lock-note { display: flex; flex-direction: column; gap: .12rem; color: #4b4f56; font-size: .8rem; }
+.user-lock-note + .user-lock-note { margin-top: .45rem; }
+.user-lock-note small { color: var(--su-muted); }
+.user-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.user-row-actions .btn { white-space: nowrap; }
+.user-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.25rem; margin: 0; }
+.user-detail-grid > div { min-width: 0; padding: .8rem 0; border-bottom: 1px solid var(--su-border); }
+.user-detail-grid .user-detail-wide { grid-column: 1 / -1; }
+.user-detail-grid dt { margin-bottom: .22rem; color: var(--su-muted); font-size: .75rem; font-weight: 700; }
+.user-detail-grid dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
+.modal-content { overflow: hidden; border: 0; border-radius: 1rem; box-shadow: 0 1.2rem 3.5rem rgba(17, 17, 17, .2); }
+.modal-header,
+.modal-footer { border-color: var(--su-border); }
+.audit-details { min-width: 12rem; max-width: 24rem; overflow-wrap: anywhere; white-space: normal; }
+
+.transaction-history { margin-top: 1.5rem; }
+.transaction-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .65rem; }
+.transaction-history-heading h2 { margin: 0; font-size: 1rem; }
+.transaction-history-heading span { color: var(--su-muted); font-size: .78rem; }
+.transaction-list { overflow: hidden; border: 1px solid var(--su-border); border-radius: 1rem; background: #fff; box-shadow: 0 .4rem 1.5rem rgba(17, 17, 17, .035); }
+.transaction-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: .9rem; padding: 1rem 1.1rem; color: var(--su-ink); border-bottom: 1px solid #eef0f2; text-decoration: none; transition: background .15s ease; }
+.transaction-row:last-child { border-bottom: 0; }
+.transaction-row:hover { color: var(--su-ink); background: #fffaf0; }
+.transaction-row:focus-visible { position: relative; z-index: 1; outline: 3px solid rgba(181, 138, 50, .28); outline-offset: -3px; }
+.transaction-direction { width: 2.55rem; height: 2.55rem; display: grid; flex: 0 0 auto; place-items: center; border-radius: .75rem; }
+.transaction-direction svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.transaction-direction.is-outgoing { color: #9b2c24; background: #fbe9e7; }
+.transaction-direction.is-incoming { color: #287a4b; background: #e8f5ed; transform: rotate(180deg); }
+.transaction-copy { min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+.transaction-copy strong,
+.transaction-description,
+.transaction-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transaction-copy strong { font-size: .9rem; }
+.transaction-description { color: #555b64; font-size: .8rem; }
+.transaction-copy small { color: var(--su-muted); font-size: .72rem; }
+.transaction-amount { text-align: right; font-size: .9rem; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.transaction-amount.is-outgoing { color: #a13028; }
+.transaction-amount.is-incoming { color: #287a4b; }
+.transaction-amount small { font-size: .65rem; letter-spacing: .02em; }
+.transaction-chevron { color: #a1a5ad; font-size: 1.55rem; line-height: 1; }
 
 .profile-card {
     max-width: 58rem;
@@ -298,7 +353,23 @@ textarea.form-control { min-height: 90px; }
 .loading-progress-text::after { content: var(--blazor-load-percentage-text, "Đang tải"); }
 
 @media (max-width: 1099.98px) {
-    .quick-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.session-bootstrap {
+    min-height: 100vh;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 1rem;
+    color: #fff;
+    background: #111;
+}
+
+.session-bootstrap .spinner-border {
+    width: 2.4rem;
+    height: 2.4rem;
+    color: var(--su-gold);
 }
 
 @media (max-width: 767.98px) {
@@ -306,6 +377,15 @@ textarea.form-control { min-height: 90px; }
     .card-body { padding: 1.1rem; }
     .table-responsive { margin-inline: -.25rem; }
     .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .history-toolbar { grid-template-columns: 1fr; }
+    .user-management-search { grid-template-columns: 1fr; }
+    .user-management-search .btn { width: 100%; }
+    .user-row-actions { justify-content: flex-start; margin-top: .45rem; }
+    .user-detail-grid { grid-template-columns: 1fr; }
+    .user-detail-grid .user-detail-wide { grid-column: 1; }
+    .transaction-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: .7rem; padding: .9rem; }
+    .transaction-amount { grid-column: 2; text-align: left; }
+    .transaction-chevron { grid-column: 3; grid-row: 1 / span 2; }
     .mobile-stack-table thead { display: none; }
     .mobile-stack-table,
     .mobile-stack-table tbody,
@@ -326,7 +406,7 @@ textarea.form-control { min-height: 90px; }
 @media (max-width: 575.98px) {
     .bank-card { min-height: 14.5rem; padding: 1.2rem; }
     .bank-card-header { flex-wrap: wrap; }
-    .account-menu { top: auto; right: 1.2rem; bottom: 4.8rem; width: calc(100% - 2.4rem); }
+    .account-menu { width: 100%; max-height: 52vh; }
     .account-option { align-items: flex-start; flex-direction: column; gap: .2rem; }
     .profile-identity { align-items: flex-start; padding: 1.2rem; }
     .profile-avatar { width: 3.5rem; height: 3.5rem; }

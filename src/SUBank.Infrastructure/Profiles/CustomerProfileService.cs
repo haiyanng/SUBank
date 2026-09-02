@@ -15,7 +15,7 @@ public sealed class CustomerProfileService(SUBankDbContext dbContext) : ICustome
             {
                 x.FullName,
                 x.DateOfBirth,
-                x.IdentityNumber,
+                x.IdentityCardNumber,
                 x.Phone,
                 x.Email,
                 x.PermanentAddress,
@@ -30,7 +30,7 @@ public sealed class CustomerProfileService(SUBankDbContext dbContext) : ICustome
             : new CustomerProfileDetail(
                 profile.FullName,
                 profile.DateOfBirth,
-                MaskIdentityNumber(profile.IdentityNumber),
+                PersonalDataMasking.MaskIdentityCardNumber(profile.IdentityCardNumber),
                 profile.Phone,
                 profile.Email,
                 profile.PermanentAddress,
@@ -39,11 +39,4 @@ public sealed class CustomerProfileService(SUBankDbContext dbContext) : ICustome
                 profile.UpdatedAtUtc);
     }
 
-    private static string MaskIdentityNumber(string value)
-    {
-        if (value.Length <= 6)
-            return new string('*', value.Length);
-
-        return $"{value[..3]}{new string('*', value.Length - 6)}{value[^3..]}";
-    }
 }

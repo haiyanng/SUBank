@@ -19,7 +19,7 @@ public sealed class ActiveSessionMiddlewareTests
         });
         var context = AuthenticatedContext("user-1", "session-1");
 
-        await middleware.InvokeAsync(context, new FixedSessionStore(true));
+        await middleware.InvokeAsync(context, new FixedSessionValidator(true));
 
         Assert.True(nextCalled);
     }
@@ -31,7 +31,7 @@ public sealed class ActiveSessionMiddlewareTests
         var context = AuthenticatedContext("user-1", "old-session");
 
         await Assert.ThrowsAsync<AuthenticationException>(
-            () => middleware.InvokeAsync(context, new FixedSessionStore(false)));
+            () => middleware.InvokeAsync(context, new FixedSessionValidator(false)));
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class ActiveSessionMiddlewareTests
         var context = AuthenticatedContext("user-1", "session-1");
 
         await Assert.ThrowsAsync<DependencyUnavailableException>(
-            () => middleware.InvokeAsync(context, new UnavailableSessionStore()));
+            () => middleware.InvokeAsync(context, new UnavailableSessionValidator()));
     }
 
     private static DefaultHttpContext AuthenticatedContext(string userId, string sessionId)
@@ -52,22 +52,15 @@ public sealed class ActiveSessionMiddlewareTests
         return context;
     }
 
-    private sealed class FixedSessionStore(bool active) : IActiveSessionStore
+    private sealed class FixedSessionValidator(bool active) : IActiveSessionValidator
     {
-        public Task<string?> ReplaceAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
-            Task.FromResult<string?>(null);
-        public Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
+        public Task<bool> IsValidAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
             Task.FromResult(active);
-        public Task RevokeAsync(string userId, string sessionId, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class UnavailableSessionStore : IActiveSessionStore
+    private sealed class UnavailableSessionValidator : IActiveSessionValidator
     {
-        public Task<string?> ReplaceAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
-            throw new DependencyUnavailableException("Unavailable");
-        public Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
-            throw new DependencyUnavailableException("Unavailable");
-        public Task RevokeAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
+        public Task<bool> IsValidAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
             throw new DependencyUnavailableException("Unavailable");
     }
 }

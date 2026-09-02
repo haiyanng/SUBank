@@ -29,7 +29,8 @@ Hệ thống được xây dựng dưới dạng modular monolith bằng .NET 10
 
 - Database schema, constraints, migrations, deterministic seed và hướng dẫn dựng lại database sạch.
 - Role và demo user bằng ASP.NET Core Identity.
-- Login, refresh, logout, `/me`, khóa sau ba lần sai và Admin mở khóa.
+- Login, refresh, logout, `/me`, Identity lockout 15 phút sau ba lần sai và Admin có thể mở sớm.
+- Admin suspension độc lập dành riêng cho Customer, có lý do, audit và thu hồi phiên.
 - Customer xem danh sách/chi tiết tài khoản và lịch sử/chi tiết giao dịch đúng quyền.
 - Chuyển tiền nội bộ SUBank có transaction password, idempotency, SQL transaction nguyên tử, xử lý concurrency và audit.
 - Teller cash deposit có SQL transaction nguyên tử và audit.
@@ -45,7 +46,7 @@ Seed phải tạo bốn user riêng biệt bằng ASP.NET Core Identity:
 | `0900000001` | Customer | Chuyển tiền, xem account/history, tạo QR |
 | `0900000002` | Customer | Nhận tiền, quét QR và kiểm chứng realtime |
 | `teller` | Teller | Thực hiện Cash Deposit |
-| `admin` | Admin | Mở khóa user, xử lý Address Request và xem Audit Log |
+| `admin` | Admin | Tìm kiếm, xem chi tiết, khóa/mở khóa Customer và xem Audit Log |
 
 Teller và Admin là hai user riêng, không gán đồng thời hai role này cho một demo user. Password và transaction password Development phải là dữ liệu demo rõ ràng, không tái sử dụng secret thật và được tài liệu hóa an toàn trong README dành cho Development.
 
@@ -55,7 +56,6 @@ Teller và Admin là hai user riêng, không gán đồng thời hai role này c
 - SignalR `ForceLogout` và thông báo số dư/giao dịch sau khi database commit.
 - Tạo SUBank QR, quét bằng camera, đọc QR từ ảnh upload và điền trước thông tin transfer.
 - Sao kê tháng/năm và xuất PDF ở mức tối thiểu.
-- Address-change request và luồng Admin approve/reject.
 - Trợ lý tài chính OpenAI chỉ đọc, sử dụng backend tool xác định và có fallback an toàn.
 
 ### P2 - cắt trước nếu có nguy cơ trễ
@@ -83,7 +83,7 @@ Controller chỉ xử lý vấn đề vận chuyển dữ liệu HTTP. Controlle
 Teller và Admin có thể dùng chung Staff Portal/layout để giảm UI trùng lặp, nhưng authorization vẫn tách biệt:
 
 - Cash Deposit yêu cầu role Teller.
-- Unlock User, Address Request approve/reject và Audit Logs yêu cầu role Admin.
+- Quản lý trạng thái Customer và Audit Logs yêu cầu role Admin; server phải xác minh target có role Customer cùng `CustomerProfile`.
 - Teller truy cập Admin endpoint phải nhận `403`.
 - Admin truy cập Teller Cash Deposit endpoint phải nhận `403`.
 - Navigation ẩn theo role chỉ phục vụ UX và không thay thế API policy.
@@ -102,10 +102,13 @@ Không tạo `FailedLoginAttempts` hoặc `IsLocked` custom vì chúng trùng ch
 
 - `LockedAtUtc`: hiển thị thời điểm khóa cho Admin và cung cấp audit context.
 - `TransactionPasswordHash`: credential riêng, độc lập với login password.
+- `IsAdminSuspended`, `AdminSuspendedAtUtc`, `AdminSuspensionReason`, `AdminSuspendedByUserId`: trạng thái khóa thủ công dành riêng cho Customer.
 - `IsActive`.
 - `CreatedAtUtc`.
 
-Lần đăng nhập sai thứ ba liên tiếp khóa user cho đến khi Admin reset `LockoutEnd`, `AccessFailedCount` và `LockedAtUtc`. Đăng nhập thành công reset số lần thất bại. Thao tác khóa và mở khóa đều phải được audit.
+Lần đăng nhập sai thứ ba liên tiếp khóa user trong 15 phút. Hết thời hạn, Identity tự cho phép đăng nhập lại; Admin vẫn có thể mở khóa sớm bằng cách reset `LockoutEnd`, `AccessFailedCount` và `LockedAtUtc`. Đăng nhập thành công reset số lần thất bại.
+
+Admin suspension không dùng `LockoutEnd` hoặc `IsActive`. Admin chỉ được quản lý Customer: tìm theo họ tên/số điện thoại, xem chi tiết, khóa bằng modal xác nhận và lý do bắt buộc, hoặc mở lại tài khoản. Khóa thủ công cập nhật metadata, revoke `UserSession`/refresh token, ghi Audit Log rồi dọn Redis và gửi `ForceLogout` best-effort. Gỡ Admin suspension không xóa Identity lockout; mở Identity lockout không gỡ Admin suspension. Tab “Bị khóa” có thể gom cả hai loại nhưng UI phải chỉ rõ nguyên nhân. Không có API hoặc nút xóa Customer.
 
 ## Authentication và cookie
 
@@ -116,9 +119,11 @@ Client và API chạy trên hai HTTPS localhost port khác nhau. API phải:
 - Chỉ cho phép đúng Client origin đã cấu hình.
 - Cho phép gửi credential; không kết hợp credential với wildcard origin.
 - Sử dụng refresh cookie có `HttpOnly`, `Secure` và chính sách `SameSite` đã được review.
-- Kiểm tra request origin và áp dụng chống CSRF cho refresh/logout sử dụng cookie.
+- Refresh/logout bắt buộc custom CSRF header; nếu request có `Origin` thì chỉ chấp nhận same-origin hoặc exact Development Client origin.
 
-Access token có thời hạn ngắn và chỉ được giữ trong memory của Blazor. Không lưu access token vào `localStorage` hoặc `sessionStorage`. Khi reload trang, Client gọi refresh bằng HttpOnly cookie để nhận access token mới và giữ lại trong memory.
+Access token có thời hạn ngắn và chỉ được giữ trong memory của Blazor. Không lưu access token vào `localStorage` hoặc `sessionStorage`. Khi reload trang, Client có thể gọi refresh bằng HttpOnly cookie để nhận access token mới trong phần logical-session lifetime còn lại. Việc reload/refresh không được kéo dài mốc hết hạn tuyệt đối.
+
+Browser chỉ persist dữ liệu điều phối không phải credential: `SessionId` theo tab trong `sessionStorage` và logout intent gắn session trong `localStorage`; không dùng `history.state`/cookie JavaScript làm fallback. Nếu storage hỏng/không khả dụng thì auth-cookie flow fail closed. Các giá trị này không xác thực request; refresh token vẫn chỉ ở HttpOnly cookie và access token vẫn chỉ ở .NET/WASM memory.
 
 ### Môi trường Production/demo
 
@@ -128,9 +133,13 @@ API phục vụ Blazor WASM đã publish dưới cùng một HTTPS origin. REST 
 
 Mỗi user chỉ có một logical active session. Redis lưu active-session pointer với TTL đồng bộ với thời gian sống của refresh/session. Thay thế session phải là thao tác nguyên tử bằng Redis atomic command hoặc Lua script phù hợp; cấm sử dụng RedLock.
 
-Sau authentication và trước khi chạy nghiệp vụ, protected request kiểm tra `sub` và `sid` trong JWT với Redis. Session thiếu, không khớp hoặc đã revoke không được chạy protected operation. Khi Redis không hoạt động, hệ thống phải fail closed: trả `503` cho dependency unavailable, không được âm thầm bỏ qua session security.
+Customer dùng logical session tuyệt đối 15 phút từ lúc đăng nhập theo `Jwt:CustomerSessionMinutes`; Client dùng timer cùng foreground resume check, không proactive refresh và không kéo dài phiên khi reload. Teller/Admin dùng logical session tuyệt đối bảy ngày theo `Jwt:RefreshTokenDays`; access token chỉ refresh theo nhu cầu trước protected request/reconnect, không có heartbeat nền. Mọi refresh token được rotate trong cùng session phải kế thừa `UserSession.ExpiresAtUtc`; Redis chỉ renew TTL khi key vẫn chứa đúng `sid`. Hai refresh cùng token được phân xử bằng atomic conditional update và conflict retry một lần.
 
-SQL chỉ lưu session history và refresh token dưới dạng hash. Không log raw token, raw refresh token, session identifier, Redis key hoặc secret. SignalR `ForceLogout` gửi đến group của session cũ và chỉ cải thiện UX; Redis cùng middleware mới là lớp bảo mật có thẩm quyền.
+Tab đã bind `SessionId` không được bootstrap/non-bootstrap sang session khác; tab mới chưa bind có thể nhận session từ shared cookie. Login, refresh và logout được serialize xuyên tab bằng Web Lock giữ đến khi `fetch`, response body và kiểm tra response tối thiểu hoàn tất để response `Set-Cookie` cũ không ghi đè cookie mới; không dùng lease có TTL. Response login không đọc được, sai schema hoặc lệch `SessionId` giữa header/body phải chặn restore và thử thu hồi tất cả session ID liên quan ngay trong khóa; không xác định được ID thì chặn toàn bộ restore cho đến lần login tường minh. Logout intent gắn đúng session, không khóa nhầm tab của session mới. Request pipeline ngoài phạm vi QR chụp generation và bearer token; response cũ bị bỏ nếu session thay đổi. Logout cookie gửi CSRF header cùng expected `SessionId`, không gửi bearer; Client chỉ xác nhận khi server trả marker đã revoke. Nếu cookie đã thuộc session mới hoặc cookie request lỗi, Client dùng endpoint riêng với bearer cũ và `credentials: omit` để chỉ revoke session cũ, không đọc/ghi cookie mới. SQL token family/`UserSession` được revoke trước; Redis và SignalR chạy best-effort sau commit. Phiên login bị Client từ chối cũng dùng đường bearer-bound không mutate cookie.
+
+Fallback authorization policy deny-by-default chạy trước ranh giới nghiệp vụ. Sau authentication và trước khi chạy nghiệp vụ, protected request kiểm tra `sub` và `sid` trong JWT với Redis, sau đó đối chiếu `UserSession` cùng trạng thái active, Identity lockout và Admin suspension của user trong SQL. Session thiếu, không khớp, đã revoke, hết hạn hoặc user bị khóa/vô hiệu hóa không được chạy protected operation. Khi Redis hoặc SQL không hoạt động, hệ thống phải fail closed: trả `503` cho dependency unavailable, không được âm thầm bỏ qua session security.
+
+SQL chỉ lưu session history và refresh token dưới dạng hash. Không log raw token, raw refresh token, session identifier, Redis key hoặc secret. SignalR `ForceLogout` gửi đến group của session cũ và chỉ cải thiện UX; Redis, SQL session history và middleware mới là lớp bảo mật có thẩm quyền. Hub chỉ chấp nhận `sid` hợp lệ ở cả Redis và SQL; `BalanceChanged` và `TransactionReceived` chỉ gửi tới group của active `sid`, không gửi theo user group. Client reconnect bằng access token hiện hành, gộp các event gần nhau trước khi tải lại và tự retry connection có backoff, nhưng REST/SQL vẫn là nguồn sự thật nếu event bị bỏ lỡ.
 
 ## Biểu diễn tiền
 
@@ -152,14 +161,13 @@ Quy ước theo entity:
 | `CustomerProfile` | `long Id` | Không cần public identifier; dùng `/api/profile` |
 | `BankAccount` | `long Id` | `AccountNumber` dạng string và unique |
 | `FinancialTransaction` | `long Id` | `ReferenceNo` do server tạo và unique |
-| `AddressChangeRequest` | `long Id` | `RequestNo` do server tạo và unique |
 | `Beneficiary` | `long Id` | Có thể dùng `Id` trong endpoint nhưng bắt buộc kiểm tra ownership |
 | `RefreshToken` | `long Id` | Không expose |
 | `UserSession` | `long Id` | Không expose |
 | `AuditLog` | `long Id` | Chỉ phục vụ authorized Admin query; không cần public GUID |
 | `AiQueryLog` | `long Id` | Không expose |
 
-Account number được lưu dạng chuỗi với constraint rõ ràng về độ dài/format, không coi là kiểu số. `ReferenceNo` và `RequestNo` là business reference để hiển thị, tìm kiếm và đối chiếu khi demo.
+Account number được lưu dạng chuỗi với constraint rõ ràng về độ dài/format, không coi là kiểu số. `ReferenceNo` là business reference để hiển thị, tìm kiếm và đối chiếu khi demo.
 
 Identifier khó đoán không thay thế authorization. Mọi resource endpoint vẫn phải kiểm tra ownership hoặc role. Nếu Customer đổi account number, reference number hoặc beneficiary ID trong URL/DTO, backend không được trả dữ liệu của Customer khác.
 
@@ -171,7 +179,7 @@ Không tạo entity hoặc bảng `CustomerContact`. `CustomerProfile` là ngu�
 
 - `FullName`
 - `DateOfBirth`
-- `IdentityNumber` là dữ liệu demo tổng hợp
+- `IdentityCardNumber` là số CCCD/CMND demo tổng hợp
 - `Phone`
 - `Email`
 - `PermanentAddress`
@@ -190,8 +198,8 @@ Vì beneficiary chỉ là tài khoản nội bộ SUBank, beneficiary tham chi�
 Invariant tại Application và database:
 
 - `Amount > 0`.
-- `TRANSFER`: source và destination đều bắt buộc và phải khác nhau.
-- `CASH_DEPOSIT`: source phải null và destination bắt buộc.
+- `Transfer`: source và destination đều bắt buộc và phải khác nhau.
+- `CashDeposit`: source phải null và destination bắt buộc.
 - Mỗi lần thay đổi balance tạo đúng một financial transaction đã commit.
 - `ReferenceNo` do server tạo và phải unique.
 - Currency của account là VND.
@@ -226,8 +234,8 @@ SUBank V2.4 tự thiết kế và triển khai **SUBank QR nội bộ**. Hệ th
 Payload phiên bản đầu tiên:
 
 ```text
-QR tĩnh: subank://transfer?v=1&account=1000000001
-QR động: subank://transfer?v=1&account=1000000001&amount=500000&message=TienAn
+QR tĩnh: subank://transfer?v=1&account=0900000001
+QR động: subank://transfer?v=1&account=0900000001&amount=500000&message=TienAn
 ```
 
 Payload chỉ chứa dữ liệu hỗ trợ nhập transfer gồm version, account number, amount tùy chọn và message tùy chọn. Không đưa CustomerId, internal database ID, balance, password, transaction password, token, session ID hoặc recipient name có thẩm quyền vào QR.
@@ -266,6 +274,10 @@ QR không có money-movement engine riêng và không được bỏ qua bất k�
 
 Statement là authorized read model được truy vấn từ `FinancialTransaction`; không tạo bảng Statement. V2.4 có chức năng xuất PDF tối thiểu ở server. Trước khi chọn thư viện phải kiểm tra license, khả năng chạy Docker, tình trạng bảo trì và khả năng render ổn định. Trang trí nâng cao là P2.
 
+Số dư hiện tại và ledger dùng để tính số dư đầu/cuối kỳ phải thuộc cùng một cửa sổ đọc logic. Service mở một SQL transaction `RepeatableRead` ngắn, đọc và giữ khóa chia sẻ trên account trước, sau đó mới chốt `asOfUtc`; mọi truy vấn movement đều dùng chung cận trên này và thứ tự `CreatedAtUtc, Id`. Cách làm dựa trên invariant rằng mọi chuyển/nộp tiền đều cập nhật `BankAccount` và thêm `FinancialTransaction` trong cùng transaction. Deadlock SQL 1205 được retry một lần; transaction được kết thúc trước khi map response hoặc render PDF để không giữ khóa trong công việc CPU.
+
+Không chọn `Snapshot` ở runtime vì SQL Server hiện chưa được cấu hình `ALLOW_SNAPSHOT_ISOLATION`. Khi tải ghi thực tế đủ lớn, việc bật snapshot phải là quyết định deployment/database có kiểm chứng riêng, không phải câu lệnh tự thay đổi database lúc ứng dụng khởi động.
+
 ## Trợ lý AI
 
 ChatGPT Plus không cung cấp lượt sử dụng OpenAI API. Trợ lý được deploy cần OpenAI API billing riêng, project budget, API key và environment secret.
@@ -282,7 +294,9 @@ Phân biệt ba loại dữ liệu:
 - `AuditLog`: actor, hành động, target, kết quả, correlation context và thời gian của sự kiện bảo mật/nghiệp vụ.
 - Structured technical log: chẩn đoán và exception thông qua `ILogger`/Serilog.
 
-Global ProblemDetails handling, correlation ID, safe request logging và secret redaction là hạ tầng nền tảng, không phải việc để cuối dự án. Audit cho lần thử thất bại có thể được ghi riêng sau khi financial transaction rollback; lỗi ghi audit phải được technical log nhưng không được tạo financial transaction giả.
+Hạ tầng hiện tại ghi console JSON ở mọi môi trường và rolling file trong Development. Request completion event chỉ chứa method, route template, status, elapsed time và correlation context; không thu raw path, route value, query hoặc body. Correlation ID hợp lệ được trả qua header/ProblemDetails và tự điền vào audit mới phát sinh trong cùng HTTP request. Chi tiết cấu hình, retention và giới hạn nằm tại [Application-Logging.md](Application-Logging.md).
+
+Global ProblemDetails handling, correlation ID, safe request logging và top-level sensitive-property removal là hạ tầng nền tảng. Chúng không thay thế kỷ luật không truyền secret/PII vào `ILogger`, không phải backup và không biến technical log thành audit. Audit cho lần thử thất bại có thể được ghi riêng sau khi financial transaction rollback; lỗi ghi audit phải được technical log nhưng không được tạo financial transaction giả.
 
 ## Chính sách kiểm thử
 
@@ -291,6 +305,7 @@ Test phải đi cùng từng vertical slice, không dồn đến cuối:
 - Test migration/seed đi cùng data milestone.
 - Test login/lockout/refresh đi cùng authentication.
 - Test session replacement đi cùng Redis integration.
+- Test nhiều tab phải phủ login/refresh/logout overlap, cookie response đảo thứ tự, bootstrap `SessionId` mismatch, logout mất mạng, hidden-tab resume và stale response sau session change.
 - Test ownership đi cùng account/transaction endpoint.
 - Test validation, idempotency, atomicity và concurrency đi cùng transfer.
 - Test role và atomicity đi cùng Teller/Admin operation.
@@ -305,7 +320,7 @@ Các bằng chứng UAT `Actual Result`, screenshot, Figma approval, deployment 
 3. Account đúng quyền, transaction history/detail, dashboard, ownership tests và responsive shell.
 4. Transaction password, idempotent atomic transfer, concurrency, audit, confirmation/result UI và transfer tests.
 5. Teller deposit, Admin unlock, Redis session enforcement và SignalR `ForceLogout` nếu P0 vẫn ổn định.
-6. QR generate/upload/camera, statement PDF, address flow và constrained AI theo đúng thứ tự ưu tiên.
+6. QR generate/upload/camera, statement PDF và constrained AI theo đúng thứ tự ưu tiên.
 7. Docker same-origin deployment, Azure SQL, Upstash Redis, smoke test, responsive QA, sửa lỗi nghiêm trọng và hoàn thiện tài liệu nộp. Không bắt đầu tính năng mới trong ngày cuối.
 
 ## Mục tiêu triển khai demo

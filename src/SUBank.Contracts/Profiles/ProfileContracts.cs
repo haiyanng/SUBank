@@ -3,7 +3,7 @@ namespace SUBank.Contracts.Profiles;
 public sealed record CustomerProfileDetail(
     string FullName,
     DateOnly DateOfBirth,
-    string MaskedIdentityNumber,
+    string MaskedIdentityCardNumber,
     string Phone,
     string Email,
     string PermanentAddress,

@@ -1,12 +1,12 @@
 @page "/profile"
 @inject ApiSession Session
 
-<PageTitle>Thông tin khách hàng · SUBank</PageTitle>
+<PageTitle>Thông tin cá nhân · SUBank</PageTitle>
 
 <div class="page-heading">
     <div>
-        <div class="eyebrow">Hồ sơ khách hàng</div>
-        <h1 class="mb-1">Thông tin khách hàng</h1>
+        <div class="eyebrow">Hồ sơ cá nhân</div>
+        <h1 class="mb-1">Thông tin cá nhân</h1>
         <p>Thông tin định danh và liên hệ đang được SUBank lưu trong hồ sơ của bạn.</p>
     </div>
 </div>
@@ -20,7 +20,7 @@
 }
 else if (profile is null)
 {
-    <div class="loading-state">Đang tải thông tin khách hàng...</div>
+    <div class="loading-state">Đang tải thông tin cá nhân...</div>
 }
 else
 {
@@ -45,7 +45,7 @@ else
             </div>
             <div class="profile-field">
                 <dt>CCCD/CMND</dt>
-                <dd class="font-monospace">@profile.MaskedIdentityNumber</dd>
+                <dd class="font-monospace">@profile.MaskedIdentityCardNumber</dd>
             </div>
             <div class="profile-field">
                 <dt>Số điện thoại</dt>
@@ -70,7 +70,6 @@ else
                 <small>Cập nhật hồ sơ gần nhất</small>
                 <strong>@LastUpdated</strong>
             </div>
-            <a class="btn btn-primary" href="address-change">Yêu cầu đổi địa chỉ</a>
         </footer>
     </article>
 }
@@ -91,7 +90,7 @@ else
         }
     }
 
-    private string LastUpdated => (profile?.UpdatedAtUtc ?? profile?.CreatedAtUtc)?.ToLocalTime()
+    private string LastUpdated => (profile?.UpdatedAtUtc ?? profile?.CreatedAtUtc)?.ToOffset(TimeSpan.FromHours(7))
         .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture) ?? "Chưa có dữ liệu";
 
     protected override Task OnInitializedAsync() => LoadAsync();
@@ -101,12 +100,12 @@ else
         try
         {
             profile = await Session.GetProfileAsync();
-            error = profile is null ? "Không tìm thấy hồ sơ khách hàng." : null;
+            error = profile is null ? "Không tìm thấy hồ sơ cá nhân." : null;
         }
         catch (Exception exception)
         {
             profile = null;
-            error = exception.Message;
+            error = ClientErrorMessage.From(exception);
         }
     }
 }

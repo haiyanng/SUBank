@@ -10,7 +10,11 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 var apiBaseUrl = string.IsNullOrWhiteSpace(builder.Configuration["ApiBaseUrl"])
     ? builder.HostEnvironment.BaseAddress
     : builder.Configuration["ApiBaseUrl"]!;
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBaseUrl) });
+builder.Services.AddScoped(sp => new HttpClient
+{
+    BaseAddress = new Uri(apiBaseUrl),
+    Timeout = TimeSpan.FromSeconds(30)
+});
 builder.Services.AddScoped<ApiSession>();
 builder.Services.AddScoped<RealtimeService>();
 

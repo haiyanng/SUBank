@@ -1,14 +1,516 @@
 @page "/staff/users"
 @inject ApiSession Session
-<PageTitle>Người dùng bị khóa · SUBank</PageTitle>
-<div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Người dùng bị khóa</h1><p>Mở khóa sau khi đã xác minh yêu cầu hỗ trợ.</p></div></div>
-@if (error is not null) { <div class="alert alert-danger">@error</div> }
-else if (users is null) { <div class="loading-state">Đang tải người dùng...</div> }
-else if (users.Count == 0) { <div class="empty-state"><h2 class="h5">Mọi tài khoản đang hoạt động</h2><p class="text-body-secondary mb-0">Hiện không có người dùng bị khóa.</p></div> }
-else { <div class="card"><div class="card-body"><div class="table-responsive"><table class="table mobile-stack-table mb-0"><thead><tr><th>Tên</th><th>Số lần sai</th><th></th></tr></thead><tbody>@foreach (var user in users) { <tr><td data-label="Tên">@user.UserName</td><td data-label="Số lần sai">@user.FailedAttempts</td><td><button class="btn btn-sm btn-outline-primary" disabled="@busy" @onclick="() => UnlockAsync(user.UserName)">Mở khóa</button></td></tr> }</tbody></table></div></div></div> }
+
+<PageTitle>Quản lý người dùng · SUBank</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Khu vực quản trị</div>
+        <h1 class="mb-1">Quản lý người dùng</h1>
+        <p>Tra cứu khách hàng, kiểm tra trạng thái đăng nhập và thực hiện khóa tài khoản khi cần thiết.</p>
+    </div>
+</div>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        <p class="mb-2">@error</p>
+        <button class="btn btn-outline-danger btn-sm" type="button" disabled="@loading" @onclick="LoadAsync">Thử lại</button>
+    </div>
+}
+
+@if (customers is null && error is null)
+{
+    <div class="loading-state">Đang tải danh sách khách hàng...</div>
+}
+else
+{
+    @if (message is not null)
+    {
+        <div class="alert alert-success" role="status">@message</div>
+    }
+
+    <div class="card history-controls user-management-controls mb-3">
+        <div class="card-body">
+            <form class="user-management-search" @onsubmit="SearchAsync" @onsubmit:preventDefault="true">
+                <div>
+                    <label class="form-label" for="customer-search">Tìm kiếm khách hàng</label>
+                    <input id="customer-search" class="form-control" type="search"
+                           placeholder="Nhập họ tên hoặc số điện thoại"
+                           autocomplete="off" maxlength="100"
+                           @bind="searchText" @bind:event="oninput" />
+                </div>
+                <button class="btn btn-primary" type="submit" disabled="@loading">
+                    @(loading ? "Đang tìm..." : "Tìm kiếm")
+                </button>
+                @if (!string.IsNullOrWhiteSpace(appliedSearch))
+                {
+                    <button class="btn btn-outline-secondary" type="button" disabled="@loading" @onclick="ClearSearchAsync">
+                        Xóa tìm kiếm
+                    </button>
+                }
+            </form>
+
+            <div class="history-filter-tabs" role="group" aria-label="Lọc trạng thái Customer">
+                <button type="button" class="history-filter @(filter == CustomerFilter.All ? "is-active" : null)"
+                        aria-pressed="@(filter == CustomerFilter.All)" @onclick="() => SetFilter(CustomerFilter.All)">Tất cả</button>
+                <button type="button" class="history-filter @(filter == CustomerFilter.Active ? "is-active" : null)"
+                        aria-pressed="@(filter == CustomerFilter.Active)" @onclick="() => SetFilter(CustomerFilter.Active)">Hoạt động</button>
+                <button type="button" class="history-filter @(filter == CustomerFilter.Locked ? "is-active" : null)"
+                        aria-pressed="@(filter == CustomerFilter.Locked)" @onclick="() => SetFilter(CustomerFilter.Locked)">Bị khóa</button>
+            </div>
+        </div>
+    </div>
+
+    @if (FilteredCustomers.Count == 0)
+    {
+        <div class="empty-state">
+            <h2 class="h5">Không có khách hàng phù hợp</h2>
+            <p class="text-body-secondary mb-0">@EmptyMessage</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table mobile-stack-table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Khách hàng</th>
+                                <th>Số điện thoại</th>
+                                <th>Trạng thái</th>
+                                <th>Thông tin khóa</th>
+                                <th class="text-end">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var customer in FilteredCustomers)
+                            {
+                                <tr>
+                                    <td data-label="Khách hàng"><strong>@customer.FullName</strong></td>
+                                    <td data-label="Số điện thoại"><strong class="user-phone">@customer.Phone</strong></td>
+                                    <td data-label="Trạng thái">
+                                        <div class="user-status-list">
+                                            @if (customer.IsAdminSuspended)
+                                            {
+                                                <span class="badge rounded-pill text-bg-danger">Khóa bởi Admin</span>
+                                            }
+                                            @if (customer.IsIdentityLocked)
+                                            {
+                                                <span class="badge rounded-pill text-bg-warning">Khóa đăng nhập 15 phút</span>
+                                            }
+                                            @if (!customer.IsAdminSuspended && !customer.IsIdentityLocked)
+                                            {
+                                                <span class="badge rounded-pill text-bg-success">Hoạt động</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td data-label="Thông tin khóa">
+                                        @if (customer.IsIdentityLocked)
+                                        {
+                                            <div class="user-lock-note">
+                                                <strong>Đăng nhập:</strong> đến @FormatDateTime(customer.IdentityLockoutEndUtc)
+                                                <small>Sai @customer.FailedAttempts lần liên tiếp</small>
+                                            </div>
+                                        }
+                                        @if (customer.IsAdminSuspended)
+                                        {
+                                            <div class="user-lock-note"><strong>Admin:</strong> từ @FormatDateTime(customer.AdminSuspendedAtUtc)</div>
+                                        }
+                                        @if (!customer.IsAdminSuspended && !customer.IsIdentityLocked)
+                                        {
+                                            <span class="text-body-secondary">—</span>
+                                        }
+                                    </td>
+                                    <td data-label="Thao tác">
+                                        <div class="user-row-actions">
+                                            <button class="btn btn-sm btn-outline-secondary" type="button" disabled="@busy"
+                                                    @onclick="() => OpenDetailAsync(customer.UserName)">Xem chi tiết</button>
+
+                                            @if (customer.IsIdentityLocked)
+                                            {
+                                                <button class="btn btn-sm btn-outline-primary" type="button" disabled="@busy"
+                                                        @onclick="() => UnlockIdentityAsync(customer)">
+                                                    @(busyAction == $"identity:{customer.UserName}" ? "Đang mở..." : "Mở khóa đăng nhập")
+                                                </button>
+                                            }
+
+                                            @if (customer.IsAdminSuspended)
+                                            {
+                                                <button class="btn btn-sm btn-outline-primary" type="button" disabled="@busy"
+                                                        @onclick="() => ResumeAsync(customer)">
+                                                    @(busyAction == $"resume:{customer.UserName}" ? "Đang mở..." : "Mở khóa tài khoản")
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button class="btn btn-sm btn-outline-danger" type="button" disabled="@busy"
+                                                        @onclick="() => OpenSuspendModal(customer)">Khóa tài khoản</button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@if (detailModalOpen)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="customer-detail-title">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <div class="eyebrow">Khách hàng</div>
+                        <h2 class="modal-title fs-5" id="customer-detail-title">Chi tiết khách hàng</h2>
+                    </div>
+                    <button class="btn-close" type="button" aria-label="Đóng" @onclick="CloseDetailModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (detailLoading)
+                    {
+                        <div class="loading-state">Đang tải thông tin khách hàng...</div>
+                    }
+                    else if (detailError is not null)
+                    {
+                        <div class="alert alert-danger mb-0" role="alert">@detailError</div>
+                    }
+                    else if (selectedDetail is not null)
+                    {
+                        <div class="user-detail-status mb-3">
+                            @if (selectedDetail.IsAdminSuspended)
+                            {
+                                <span class="badge rounded-pill text-bg-danger">Khóa bởi Admin</span>
+                            }
+                            @if (selectedDetail.IsIdentityLocked)
+                            {
+                                <span class="badge rounded-pill text-bg-warning">Khóa đăng nhập 15 phút</span>
+                            }
+                            @if (!selectedDetail.IsAdminSuspended && !selectedDetail.IsIdentityLocked)
+                            {
+                                <span class="badge rounded-pill text-bg-success">Hoạt động</span>
+                            }
+                        </div>
+
+                        <dl class="user-detail-grid">
+                            <div><dt>Họ và tên</dt><dd>@selectedDetail.FullName</dd></div>
+                            <div><dt>Số điện thoại</dt><dd>@selectedDetail.Phone</dd></div>
+                            <div><dt>Tên đăng nhập</dt><dd>@selectedDetail.UserName</dd></div>
+                            <div><dt>Ngày sinh</dt><dd>@selectedDetail.DateOfBirth.ToString("dd/MM/yyyy")</dd></div>
+                            <div><dt>CCCD</dt><dd>@selectedDetail.MaskedIdentityCardNumber</dd></div>
+                            <div><dt>Email</dt><dd>@selectedDetail.Email</dd></div>
+                            <div class="user-detail-wide"><dt>Địa chỉ thường trú</dt><dd>@selectedDetail.PermanentAddress</dd></div>
+                            <div class="user-detail-wide"><dt>Địa chỉ tạm trú</dt><dd>@DisplayOrDash(selectedDetail.TemporaryAddress)</dd></div>
+                            <div><dt>Ngày tạo hồ sơ</dt><dd>@FormatDateTime(selectedDetail.CreatedAtUtc)</dd></div>
+                            <div><dt>Cập nhật gần nhất</dt><dd>@FormatDateTime(selectedDetail.UpdatedAtUtc)</dd></div>
+                        </dl>
+
+                        @if (selectedDetail.IsIdentityLocked)
+                        {
+                            <div class="alert alert-warning mt-3 mb-0">
+                                <strong>Identity Lockout:</strong>
+                                khóa đăng nhập tạm thời đến @FormatDateTime(selectedDetail.IdentityLockoutEndUtc)
+                                sau @selectedDetail.FailedAttempts lần nhập sai.
+                            </div>
+                        }
+
+                        @if (selectedDetail.IsAdminSuspended)
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">
+                                <strong>Admin suspension:</strong>
+                                khóa từ @FormatDateTime(selectedDetail.AdminSuspendedAtUtc)
+                                @if (!string.IsNullOrWhiteSpace(selectedDetail.AdminSuspendedByUserName))
+                                {
+                                    <span>bởi @selectedDetail.AdminSuspendedByUserName.</span>
+                                }
+                                <div class="mt-1"><strong>Lý do:</strong> @DisplayOrDash(selectedDetail.AdminSuspensionReason)</div>
+                            </div>
+                        }
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CloseDetailModal">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@if (suspensionTarget is not null)
+{
+    <div class="modal fade show d-block" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="suspend-customer-title">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form @onsubmit="SuspendAsync" @onsubmit:preventDefault="true">
+                    <div class="modal-header">
+                        <div>
+                            <div class="eyebrow">Xác nhận thao tác</div>
+                            <h2 class="modal-title fs-5" id="suspend-customer-title">Khóa tài khoản Customer</h2>
+                        </div>
+                        <button class="btn-close" type="button" aria-label="Đóng" disabled="@busy" @onclick="CloseSuspendModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>
+                            Khách hàng <strong>@suspensionTarget.FullName</strong>
+                            (<span class="user-phone">@suspensionTarget.Phone</span>) sẽ không thể đăng nhập hoặc tiếp tục phiên hiện tại.
+                        </p>
+
+                        @if (suspensionError is not null)
+                        {
+                            <div class="alert alert-danger" role="alert">@suspensionError</div>
+                        }
+
+                        <label class="form-label" for="suspension-reason">Lý do khóa <span class="text-danger">*</span></label>
+                        <textarea id="suspension-reason" class="form-control" rows="4"
+                                  placeholder="Nhập lý do từ 3 đến 500 ký tự"
+                                  minlength="3" maxlength="500" required
+                                  @bind="suspensionReason" @bind:event="oninput"></textarea>
+                        <div class="d-flex justify-content-between gap-3 mt-1">
+                            <small class="text-body-secondary">Lý do sẽ được ghi vào Audit Log.</small>
+                            <small class="text-body-secondary">@suspensionReason.Length/500</small>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" type="button" disabled="@busy" @onclick="CloseSuspendModal">Hủy</button>
+                        <button class="btn btn-danger" type="submit" disabled="@busy">@(busy ? "Đang khóa..." : "Xác nhận khóa")</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
 @code {
-    private List<LockedUserSummary>? users; private string? error; private bool busy;
+    private List<CustomerManagementSummary>? customers;
+    private CustomerFilter filter = CustomerFilter.All;
+    private string searchText = string.Empty;
+    private string appliedSearch = string.Empty;
+    private string? error;
+    private string? message;
+    private bool busy;
+    private bool loading;
+    private string? busyAction;
+
+    private bool detailModalOpen;
+    private bool detailLoading;
+    private string? detailError;
+    private CustomerManagementDetail? selectedDetail;
+
+    private CustomerManagementSummary? suspensionTarget;
+    private string suspensionReason = string.Empty;
+    private string? suspensionError;
+
+    private IReadOnlyList<CustomerManagementSummary> FilteredCustomers => customers is null
+        ? []
+        : filter switch
+        {
+            CustomerFilter.Active => customers.Where(x => !x.IsAdminSuspended && !x.IsIdentityLocked).ToList(),
+            CustomerFilter.Locked => customers.Where(x => x.IsAdminSuspended || x.IsIdentityLocked).ToList(),
+            _ => customers
+        };
+
+    private string EmptyMessage
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(appliedSearch))
+                return $"Không tìm thấy kết quả cho “{appliedSearch}”.";
+
+            return filter switch
+            {
+                CustomerFilter.Active => "Hiện không có khách hàng đang hoạt động.",
+                CustomerFilter.Locked => "Hiện không có khách hàng bị khóa.",
+                _ => "Hệ thống chưa có khách hàng."
+            };
+        }
+    }
+
     protected override Task OnInitializedAsync() => LoadAsync();
-    private async Task LoadAsync() { try { users = await Session.GetLockedUsersAsync() ?? []; } catch (Exception ex) { error = ex.Message; } }
-    private async Task UnlockAsync(string name) { busy = true; error = null; try { await Session.UnlockAsync(name); await LoadAsync(); } catch (Exception ex) { error = ex.Message; } finally { busy = false; } }
+
+    private void SetFilter(CustomerFilter value) => filter = value;
+
+    private async Task LoadAsync()
+    {
+        if (loading) return;
+
+        loading = true;
+        error = null;
+        try
+        {
+            customers = await Session.GetCustomersAsync(appliedSearch) ?? [];
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        appliedSearch = searchText.Trim();
+        message = null;
+        await LoadAsync();
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        searchText = string.Empty;
+        appliedSearch = string.Empty;
+        message = null;
+        await LoadAsync();
+    }
+
+    private async Task OpenDetailAsync(string userName)
+    {
+        detailModalOpen = true;
+        detailLoading = true;
+        detailError = null;
+        selectedDetail = null;
+        try
+        {
+            selectedDetail = await Session.GetCustomerAsync(userName);
+            if (selectedDetail is null) detailError = "Không tìm thấy thông tin khách hàng.";
+        }
+        catch (Exception exception)
+        {
+            detailError = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            detailLoading = false;
+        }
+    }
+
+    private void CloseDetailModal()
+    {
+        detailModalOpen = false;
+        detailError = null;
+        selectedDetail = null;
+    }
+
+    private void OpenSuspendModal(CustomerManagementSummary customer)
+    {
+        suspensionTarget = customer;
+        suspensionReason = string.Empty;
+        suspensionError = null;
+    }
+
+    private void CloseSuspendModal()
+    {
+        if (busy) return;
+        suspensionTarget = null;
+        suspensionReason = string.Empty;
+        suspensionError = null;
+    }
+
+    private async Task SuspendAsync()
+    {
+        if (busy || suspensionTarget is null) return;
+
+        var reason = suspensionReason.Trim();
+        if (reason.Length is < 3 or > 500)
+        {
+            suspensionError = "Lý do khóa phải có từ 3 đến 500 ký tự.";
+            return;
+        }
+
+        var target = suspensionTarget;
+        busy = true;
+        busyAction = $"suspend:{target.UserName}";
+        suspensionError = null;
+        error = null;
+        message = null;
+        try
+        {
+            await Session.SuspendCustomerAsync(target.UserName, new SuspendCustomerRequest(reason));
+            suspensionTarget = null;
+            suspensionReason = string.Empty;
+            await LoadAsync();
+            if (error is null) message = $"Đã khóa tài khoản của {target.FullName}.";
+        }
+        catch (Exception exception)
+        {
+            suspensionError = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            busyAction = null;
+            busy = false;
+        }
+    }
+
+    private async Task ResumeAsync(CustomerManagementSummary customer)
+    {
+        if (busy) return;
+
+        busy = true;
+        busyAction = $"resume:{customer.UserName}";
+        error = null;
+        message = null;
+        try
+        {
+            await Session.ResumeCustomerAsync(customer.UserName);
+            await LoadAsync();
+            if (error is null) message = $"Đã mở khóa tài khoản của {customer.FullName}.";
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            busyAction = null;
+            busy = false;
+        }
+    }
+
+    private async Task UnlockIdentityAsync(CustomerManagementSummary customer)
+    {
+        if (busy) return;
+
+        busy = true;
+        busyAction = $"identity:{customer.UserName}";
+        error = null;
+        message = null;
+        try
+        {
+            await Session.UnlockCustomerIdentityAsync(customer.UserName);
+            await LoadAsync();
+            if (error is null) message = $"Đã mở khóa đăng nhập cho {customer.FullName}.";
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            busyAction = null;
+            busy = false;
+        }
+    }
+
+    private static string FormatDateTime(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "—";
+
+    private static string DisplayOrDash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private enum CustomerFilter
+    {
+        All,
+        Active,
+        Locked
+    }
 }

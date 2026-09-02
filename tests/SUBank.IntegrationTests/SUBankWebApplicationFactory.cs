@@ -4,8 +4,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using SUBank.Application.Abstractions;
 using SUBank.Api.Realtime;
+using SUBank.Application.Abstractions;
 
 namespace SUBank.IntegrationTests;
 
@@ -15,6 +15,10 @@ public sealed class SUBankWebApplicationFactory : WebApplicationFactory<Program>
     {
         builder.UseSetting("ConnectionStrings:DefaultConnection",
             "Server=(localdb)\\MSSQLLocalDB;Database=SUBankV2_Integration;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False");
+        builder.UseSetting("DatabaseInitialization:ApplyMigrationsOnStartup", "true");
+        builder.UseSetting("DatabaseInitialization:SeedDemoData", "true");
+        builder.UseSetting("DatabaseInitialization:AllowedSeedDataSource", "(localdb)\\MSSQLLocalDB");
+        builder.UseSetting("DatabaseInitialization:AllowedSeedDatabase", "SUBankV2_Integration");
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IActiveSessionStore>();
@@ -32,10 +36,10 @@ public sealed class TestRealtimeNotifier(SignalRRealtimeNotifier inner) : IRealt
     public ConcurrentQueue<(string UserId, string AccountNumber)> BalanceChanges { get; } = new();
     public ConcurrentQueue<(string UserId, string ReferenceNo, string AccountNumber)> Transactions { get; } = new();
 
-    public Task ForceLogoutAsync(string sessionId, CancellationToken cancellationToken)
+    public Task ForceLogoutAsync(string sessionId, string reason, CancellationToken cancellationToken)
     {
         ForcedSessions.Enqueue(sessionId);
-        return inner.ForceLogoutAsync(sessionId, cancellationToken);
+        return inner.ForceLogoutAsync(sessionId, reason, cancellationToken);
     }
 
     public Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken)
@@ -75,6 +79,12 @@ internal sealed class TestActiveSessionStore : IActiveSessionStore
 
     public Task<bool> IsActiveAsync(string userId, string sessionId, CancellationToken cancellationToken) =>
         Task.FromResult(sessions.TryGetValue(userId, out var active) && active == sessionId);
+
+    public Task<string?> GetActiveSessionIdAsync(string userId, CancellationToken cancellationToken) =>
+        Task.FromResult(sessions.TryGetValue(userId, out var active) ? active : null);
+
+    public Task<bool> RenewAsync(string userId, string sessionId, TimeSpan lifetime, CancellationToken cancellationToken) =>
+        IsActiveAsync(userId, sessionId, cancellationToken);
 
     public Task RevokeAsync(string userId, string sessionId, CancellationToken cancellationToken)
     {

@@ -1,21 +1,246 @@
 @page "/transfer"
+@using System.ComponentModel.DataAnnotations
 @inject ApiSession Session
+
 <PageTitle>Chuyển tiền · SUBank</PageTitle>
-<div class="page-heading"><div><div class="eyebrow">Chuyển tiền an toàn</div><h1 class="mb-1">Chuyển tiền nội bộ</h1><p>Kiểm tra kỹ người nhận và số tiền trước khi xác nhận.</p></div><a class="btn btn-outline-secondary" href="qr">Quét QR</a></div>
-<div class="row g-4"><div class="col-lg-7"><div class="card"><div class="card-body p-lg-4"><EditForm Model="model" OnValidSubmit="SubmitAsync">
-<div class="mb-3"><label class="form-label" for="source">Tài khoản nguồn</label><InputText id="source" readonly class="form-control bg-body-tertiary" @bind-Value="model.Source" /></div>
-<div class="mb-3"><label class="form-label" for="destination">Tài khoản nhận</label><InputText id="destination" inputmode="numeric" maxlength="10" class="form-control" @bind-Value="model.Destination" /></div>
-<div class="mb-3"><label class="form-label" for="amount">Số tiền (VND)</label><InputNumber id="amount" class="form-control form-control-lg money" @bind-Value="model.Amount" /></div>
-<div class="mb-3"><label class="form-label" for="description">Nội dung</label><InputText id="description" maxlength="280" class="form-control" @bind-Value="model.Description" /></div>
-<div class="mb-3"><label class="form-label" for="transaction-password">Mật khẩu giao dịch</label><InputText id="transaction-password" type="password" inputmode="numeric" autocomplete="off" class="form-control" @bind-Value="model.TransactionPassword" /><div class="form-text">Demo Development mặc định: 123456</div></div>
-@if (message is not null) { <div class="alert @(success ? "alert-success" : "alert-danger")" role="alert">@message</div> }
-<button class="btn btn-primary btn-lg w-100" disabled="@busy">@(busy ? "Đang xử lý..." : "Xác nhận chuyển tiền")</button>
-</EditForm></div></div></div><div class="col-lg-5"><div class="card h-100"><div class="card-body"><h2 class="h5">Lưu ý trước khi chuyển</h2><ul class="text-body-secondary ps-3"><li class="mb-2">SUBank chỉ mô phỏng chuyển tiền nội bộ.</li><li class="mb-2">Giao dịch thành công sẽ cập nhật số dư realtime.</li><li>Không chia sẻ mật khẩu giao dịch cho người khác.</li></ul><hr /><div class="metric-label">Số tiền đang nhập</div><div class="h2 money">@model.Amount.ToString("N0") VND</div></div></div></div></div>
+
+<div class="page-heading">
+    <div>
+        <div class="eyebrow">Chuyển tiền an toàn</div>
+        <h1 class="mb-1">Chuyển tiền nội bộ</h1>
+        <p>Kiểm tra kỹ người nhận và số tiền trước khi xác nhận.</p>
+    </div>
+    <a class="btn btn-outline-secondary" href="qr">Quét QR</a>
+</div>
+
+@if (loadingAccounts)
+{
+    <div class="empty-state" role="status">
+        <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+        Đang tải tài khoản...
+    </div>
+}
+else if (accountLoadError is not null)
+{
+    <div class="alert alert-danger" role="alert">
+        <p class="mb-2">@accountLoadError</p>
+        <button class="btn btn-outline-danger btn-sm" type="button" @onclick="LoadAccountsAsync">Thử lại</button>
+    </div>
+}
+else if (accounts.Count == 0)
+{
+    <div class="empty-state">Bạn chưa có tài khoản để chuyển tiền.</div>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-body p-lg-4">
+                    <EditForm Model="model" OnValidSubmit="SubmitAsync">
+                        <DataAnnotationsValidator />
+
+                        <div class="mb-3">
+                            <label class="form-label" for="source">Tài khoản nguồn</label>
+                            <InputSelect id="source" class="form-select" @bind-Value="model.Source">
+                                @foreach (var account in accounts)
+                                {
+                                    <option value="@account.AccountNumber">@account.AccountNumber - @account.Balance.ToString("N2") VND</option>
+                                }
+                            </InputSelect>
+                            <ValidationMessage For="@(() => model.Source)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="destination">Tài khoản nhận</label>
+                            <InputText id="destination" inputmode="numeric" maxlength="10" autocomplete="off"
+                                       class="form-control" @bind-Value="model.Destination" />
+                            <ValidationMessage For="@(() => model.Destination)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="amount">Số tiền (VND)</label>
+                            <InputNumber id="amount" class="form-control form-control-lg money"
+                                         min="0.01" max="9999999999999999.99" step="0.01"
+                                         @bind-Value="model.Amount" />
+                            <ValidationMessage For="@(() => model.Amount)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="description">Nội dung</label>
+                            <InputText id="description" maxlength="280" class="form-control"
+                                       @bind-Value="model.Description" />
+                            <ValidationMessage For="@(() => model.Description)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="transaction-password">Mật khẩu giao dịch</label>
+                            <InputText id="transaction-password" type="password" inputmode="numeric"
+                                       maxlength="6" autocomplete="off" class="form-control"
+                                       @bind-Value="model.TransactionPassword" />
+                            <ValidationMessage For="@(() => model.TransactionPassword)" />
+                        </div>
+
+                        @if (message is not null)
+                        {
+                            <div class="alert @(success ? "alert-success" : "alert-danger")" role="alert">@message</div>
+                        }
+
+                        <button class="btn btn-primary btn-lg w-100" disabled="@busy">
+                            @(busy ? "Đang xử lý..." : "Xác nhận chuyển tiền")
+                        </button>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 class="h5">Lưu ý trước khi chuyển</h2>
+                    <ul class="text-body-secondary ps-3">
+                        <li class="mb-2">SUBank chỉ mô phỏng chuyển tiền nội bộ.</li>
+                        <li class="mb-2">Giao dịch thành công sẽ cập nhật số dư realtime.</li>
+                        <li>Không chia sẻ mật khẩu giao dịch cho người khác.</li>
+                    </ul>
+                    <hr />
+                    <div class="metric-label">Số tiền đang nhập</div>
+                    <div class="h2 money">@model.Amount.ToString("N2") VND</div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
-    [SupplyParameterFromQuery(Name = "source")] public string? Source { get; set; } [SupplyParameterFromQuery(Name = "destination")] public string? Destination { get; set; } [SupplyParameterFromQuery(Name = "amount")] public decimal? Amount { get; set; } [SupplyParameterFromQuery(Name = "description")] public string? Description { get; set; }
-    private readonly FormModel model = new() { Source = "1000000001", Destination = "1000000002", TransactionPassword = "123456" }; private string? message; private bool success; private bool busy;
-    protected override async Task OnInitializedAsync() { var accounts = await Session.GetAccountsAsync(); model.Source = accounts?.FirstOrDefault(x => x.AccountNumber == Source)?.AccountNumber ?? accounts?.FirstOrDefault()?.AccountNumber ?? model.Source; }
-    protected override void OnParametersSet() { if (!string.IsNullOrWhiteSpace(Destination)) model.Destination = Destination; if (Amount is not null) model.Amount = Amount.Value; if (Description is not null) model.Description = Description; }
-    private async Task SubmitAsync() { busy = true; message = null; try { var result = await Session.TransferAsync(new(model.Source, model.Destination, model.Amount, model.Description, model.TransactionPassword)); success = true; message = $"Chuyển tiền thành công. Mã giao dịch: {result?.ReferenceNo}"; } catch (Exception ex) { success = false; message = ex.Message; } finally { busy = false; } }
-    private sealed class FormModel { public string Source { get; set; } = ""; public string Destination { get; set; } = ""; public decimal Amount { get; set; } = 100000; public string? Description { get; set; } = "Demo"; public string TransactionPassword { get; set; } = ""; }
+    [SupplyParameterFromQuery(Name = "source")]
+    public string? Source { get; set; }
+
+    [SupplyParameterFromQuery(Name = "destination")]
+    public string? Destination { get; set; }
+
+    [SupplyParameterFromQuery(Name = "amount")]
+    public decimal? Amount { get; set; }
+
+    [SupplyParameterFromQuery(Name = "description")]
+    public string? Description { get; set; }
+
+    private readonly List<AccountSummary> accounts = [];
+    private readonly FormModel model = new();
+    private readonly IdempotencyIntentTracker<TransferIntent> idempotencyIntent = new();
+    private string? accountLoadError;
+    private string? message;
+    private bool loadingAccounts = true;
+    private bool success;
+    private bool busy;
+
+    protected override Task OnInitializedAsync() => LoadAccountsAsync();
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(Destination)) model.Destination = Destination.Trim();
+        if (Amount is not null) model.Amount = Amount.Value;
+        if (Description is not null) model.Description = Description;
+    }
+
+    private async Task LoadAccountsAsync()
+    {
+        loadingAccounts = true;
+        accountLoadError = null;
+        try
+        {
+            accounts.Clear();
+            accounts.AddRange(await Session.GetAccountsAsync() ?? []);
+            model.Source = accounts.FirstOrDefault(x => x.AccountNumber == Source)?.AccountNumber
+                ?? accounts.FirstOrDefault()?.AccountNumber
+                ?? string.Empty;
+        }
+        catch (Exception exception)
+        {
+            accountLoadError = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            loadingAccounts = false;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (busy) return;
+
+        busy = true;
+        message = null;
+
+        try
+        {
+            var source = (model.Source ?? string.Empty).Trim();
+            var destination = (model.Destination ?? string.Empty).Trim();
+            var description = string.IsNullOrWhiteSpace(model.Description) ? null : model.Description.Trim();
+            var intent = new TransferIntent(source, destination, model.Amount, description ?? string.Empty);
+            var request = new TransferRequest(source, destination, model.Amount, description, model.TransactionPassword);
+            var result = await Session.TransferAsync(request, idempotencyIntent.GetOrCreateKey(intent));
+
+            idempotencyIntent.Complete();
+            model.Destination = string.Empty;
+            model.Amount = 0;
+            model.Description = null;
+            success = true;
+            message = $"Chuyển tiền thành công. Mã giao dịch: {result?.ReferenceNo}";
+        }
+        catch (Exception exception)
+        {
+            success = false;
+            message = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            model.TransactionPassword = string.Empty;
+            busy = false;
+        }
+    }
+
+    private sealed record TransferIntent(
+        string SourceAccountNumber,
+        string DestinationAccountNumber,
+        decimal Amount,
+        string Description);
+
+    private sealed class FormModel : IValidatableObject
+    {
+        [Required(ErrorMessage = "Vui lòng chọn tài khoản nguồn.")]
+        [RegularExpression("^[0-9]{10}$", ErrorMessage = "Tài khoản nguồn không hợp lệ.")]
+        public string Source { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Vui lòng nhập tài khoản nhận.")]
+        [RegularExpression("^[0-9]{10}$", ErrorMessage = "Tài khoản nhận phải gồm đúng 10 chữ số.")]
+        public string Destination { get; set; } = string.Empty;
+
+        public decimal Amount { get; set; }
+
+        [StringLength(280, ErrorMessage = "Nội dung không được vượt quá 280 ký tự.")]
+        public string? Description { get; set; }
+
+        [Required(ErrorMessage = "Vui lòng nhập mật khẩu giao dịch.")]
+        [RegularExpression("^[0-9]{6}$", ErrorMessage = "Mật khẩu giao dịch phải gồm đúng 6 chữ số.")]
+        public string TransactionPassword { get; set; } = string.Empty;
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (Amount < 0.01m || Amount > 9_999_999_999_999_999.99m)
+                yield return new ValidationResult(
+                    "Số tiền phải từ 0,01 đến 9.999.999.999.999.999,99.",
+                    [nameof(Amount)]);
+            else if (decimal.Round(Amount, 2) != Amount)
+                yield return new ValidationResult(
+                    "Số tiền chỉ được có tối đa 2 chữ số thập phân.",
+                    [nameof(Amount)]);
+
+            if (!string.IsNullOrWhiteSpace(Source) &&
+                string.Equals(Source, Destination, StringComparison.Ordinal))
+                yield return new ValidationResult(
+                    "Tài khoản nguồn và tài khoản nhận phải khác nhau.",
+                    [nameof(Destination)]);
+        }
+    }
 }

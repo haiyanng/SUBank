@@ -1,21 +1,24 @@
+using SUBank.Contracts.Auth;
+
 namespace SUBank.Api.Infrastructure;
 
 public sealed class RefreshCookieProtectionMiddleware(RequestDelegate next, IConfiguration configuration)
 {
-    private const string CsrfHeader = "X-SUBank-CSRF";
-
     public async Task InvokeAsync(HttpContext context)
     {
         if (HttpMethods.IsPost(context.Request.Method) &&
             (context.Request.Path.Equals("/api/auth/refresh") || context.Request.Path.Equals("/api/auth/logout")))
         {
-            if (context.Request.Headers[CsrfHeader] != "1" || !HasAllowedOrigin(context))
+            if (context.Request.Headers[AuthProtocol.CsrfHeader] != "1" || !HasAllowedOrigin(context))
             {
+                context.Response.Headers.CacheControl = "no-store";
+                context.Response.Headers.Pragma = "no-cache";
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new
                 {
                     status = StatusCodes.Status403Forbidden,
-                    title = "Yêu cầu bảo vệ cookie không hợp lệ."
+                    title = "Yêu cầu bảo vệ cookie không hợp lệ.",
+                    correlationId = context.TraceIdentifier
                 });
                 return;
             }

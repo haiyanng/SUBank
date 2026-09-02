@@ -1,11 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using SUBank.Application.Abstractions;
 
 namespace SUBank.Api.Realtime;
 
 [Authorize]
-public sealed class BankingHub : Hub
+public sealed class BankingHub(IActiveSessionValidator sessionValidator) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -17,14 +18,26 @@ public sealed class BankingHub : Hub
             return;
         }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeGroups.User(userId));
-        await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeGroups.Session(sessionId));
-        await base.OnConnectedAsync();
+        try
+        {
+            if (!await sessionValidator.IsValidAsync(userId, sessionId, Context.ConnectionAborted))
+            {
+                Context.Abort();
+                return;
+            }
+
+            await Groups.AddToGroupAsync(Context.ConnectionId, RealtimeGroups.Session(sessionId));
+            await base.OnConnectedAsync();
+        }
+        catch
+        {
+            Context.Abort();
+            throw;
+        }
     }
 }
 
 internal static class RealtimeGroups
 {
-    public static string User(string userId) => $"user:{userId}";
     public static string Session(string sessionId) => $"session:{sessionId}";
 }

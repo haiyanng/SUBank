@@ -1,0 +1,13 @@
+@inject NavigationManager Navigation
+
+<div class="session-bootstrap" role="status" aria-live="polite">
+    <span class="spinner-border" aria-hidden="true"></span>
+    <strong>Đang chuyển đến trang từ chối truy cập...</strong>
+</div>
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) Navigation.NavigateTo("/403", replace: true);
+    }
+}

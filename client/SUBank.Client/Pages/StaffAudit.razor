@@ -3,16 +3,16 @@
 
 <PageTitle>Nhật ký kiểm toán · SUBank</PageTitle>
 <div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Nhật ký kiểm toán</h1><p>Theo dõi các sự kiện bảo mật và nghiệp vụ quan trọng.</p></div></div>
-@if (error is not null) { <div class="alert alert-danger">@error</div> }
+@if (error is not null) { <div class="alert alert-danger"><p class="mb-2">@error</p><button class="btn btn-outline-danger btn-sm" type="button" disabled="@loading" @onclick="LoadAsync">Thử lại</button></div> }
 else if (items is null) { <div class="loading-state">Đang tải nhật ký...</div> }
 else if (items.Count == 0) { <div class="empty-state">Chưa có sự kiện audit.</div> }
 else
 {
     <div class="card"><div class="card-body"><div class="table-responsive"><table class="table mobile-stack-table table-sm align-middle mb-0">
-        <thead><tr><th>Thời gian</th><th>Hành động</th><th>Kết quả</th><th>Đối tượng</th></tr></thead>
+        <thead><tr><th>Thời gian</th><th>Hành động</th><th>Kết quả</th><th>Đối tượng</th><th>Chi tiết</th><th>Correlation ID</th></tr></thead>
         <tbody>@foreach (var item in items)
         {
-            <tr><td data-label="Thời gian">@item.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td><td data-label="Hành động">@item.Action</td><td data-label="Kết quả">@item.Result</td><td data-label="Đối tượng">@item.EntityType @item.EntityId</td></tr>
+            <tr><td data-label="Thời gian">@item.CreatedAtUtc.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")</td><td data-label="Hành động">@item.Action</td><td data-label="Kết quả">@item.Result</td><td data-label="Đối tượng">@item.EntityType @item.EntityId</td><td class="audit-details" data-label="Chi tiết">@(string.IsNullOrWhiteSpace(item.Details) ? "—" : item.Details)</td><td data-label="Correlation ID"><code>@(item.CorrelationId ?? "—")</code></td></tr>
         }</tbody>
     </table></div></div></div>
 }
@@ -20,9 +20,16 @@ else
 @code {
     private List<AuditLogSummary>? items;
     private string? error;
-    protected override async Task OnInitializedAsync()
+    private bool loading;
+    protected override Task OnInitializedAsync() => LoadAsync();
+    private async Task LoadAsync()
     {
+        if (loading) return;
+        loading = true;
+        items = null;
+        error = null;
         try { items = await Session.GetAuditLogsAsync() ?? []; }
-        catch (Exception ex) { error = ex.Message; }
+        catch (Exception ex) { error = ClientErrorMessage.From(ex); }
+        finally { loading = false; }
     }
 }

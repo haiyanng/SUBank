@@ -1,7 +1,9 @@
 @page "/"
 @page "/login"
+@using System.ComponentModel.DataAnnotations
 @layout AuthLayout
 @inject ApiSession Session
+@inject RealtimeService Realtime
 @inject NavigationManager Navigation
 
 <PageTitle>Đăng nhập · SUBank</PageTitle>
@@ -29,6 +31,7 @@
                 <div class="mb-3">
                     <label class="form-label" for="username">Tên đăng nhập</label>
                     <InputText id="username" autocomplete="username" class="form-control" placeholder="Nhập tên đăng nhập" @bind-Value="model.UserName" />
+                    <ValidationMessage For="@(() => model.UserName)" />
                 </div>
                 <div class="mb-2">
                     <label class="form-label" for="password">Mật khẩu</label>
@@ -36,10 +39,11 @@
                         <InputText id="password" type="@(showPassword ? "text" : "password")" autocomplete="current-password" class="form-control" placeholder="Nhập mật khẩu" @bind-Value="model.Password" />
                         <button type="button" aria-label="@(showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu")" @onclick="TogglePassword">@(showPassword ? "Ẩn" : "Hiện")</button>
                     </div>
+                    <ValidationMessage For="@(() => model.Password)" />
                 </div>
 
                 <div class="text-end mb-3">
-                        <button type="button" class="forgot-link" @onclick="ShowForgotPassword">Quên tên đăng nhập / Mật khẩu?</button>
+                    <button type="button" class="forgot-link" @onclick="ShowForgotPassword">Quên tên đăng nhập / Mật khẩu?</button>
                 </div>
 
                 @if (!string.IsNullOrEmpty(info)) { <div class="alert alert-info py-2" role="status">@info</div> }
@@ -54,6 +58,9 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "reason")]
+    public string? Reason { get; set; }
+
     private readonly LoginModel model = new();
     private string? error;
     private string? info;
@@ -65,21 +72,50 @@
         if (Session.Current is not null) NavigateAfterLogin();
     }
 
+    protected override void OnParametersSet()
+    {
+        info = Reason switch
+        {
+            "session-expired" => "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.",
+            "session-replaced" => "Tài khoản đã đăng nhập ở nơi khác. Phiên này đã kết thúc.",
+            "admin-suspended" => "Tài khoản đã bị khóa bởi quản trị viên. Vui lòng liên hệ hỗ trợ.",
+            "identity-lockout" => "Tài khoản đang bị tạm khóa do đăng nhập sai. Vui lòng thử lại sau 15 phút.",
+            "session-revoked" => "Phiên đăng nhập đã bị thu hồi. Vui lòng đăng nhập lại.",
+            "logout-unconfirmed" => "Thiết bị đã khóa phiên cục bộ, nhưng server chưa xác nhận thu hồi. Vui lòng đăng nhập lại để tiếp tục.",
+            _ => null
+        };
+    }
+
     private void TogglePassword() => showPassword = !showPassword;
     private void ShowForgotPassword() { error = null; info = "Vui lòng liên hệ Admin để xác minh và được hỗ trợ thông tin đăng nhập."; }
 
     private async Task LoginAsync()
     {
+        if (busy) return;
+
         busy = true;
         error = null;
         info = null;
         try
         {
+            await Realtime.PrepareForLoginAsync();
             await Session.LoginAsync(model.UserName, model.Password);
+            Realtime.ClearMessage();
             NavigateAfterLogin();
         }
-        catch (Exception exception) { error = exception.Message; }
-        finally { busy = false; }
+        catch (ApiRequestException exception) { error = exception.Message; }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            error = "Không thể kết nối đến dịch vụ SUBank. Vui lòng kiểm tra kết nối và thử lại.";
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+        catch { error = "Không thể đăng nhập lúc này. Vui lòng thử lại."; }
+        finally
+        {
+            model.Password = string.Empty;
+            showPassword = false;
+            busy = false;
+        }
     }
 
     private void NavigateAfterLogin() => Navigation.NavigateTo(
@@ -88,7 +124,12 @@
 
     private sealed class LoginModel
     {
+        [Required(ErrorMessage = "Vui lòng nhập tên đăng nhập.")]
+        [StringLength(256, ErrorMessage = "Tên đăng nhập không vượt quá 256 ký tự.")]
         public string UserName { get; set; } = "";
+
+        [Required(ErrorMessage = "Vui lòng nhập mật khẩu.")]
+        [StringLength(256, ErrorMessage = "Mật khẩu không vượt quá 256 ký tự.")]
         public string Password { get; set; } = "";
     }
 }
