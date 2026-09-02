@@ -120,7 +120,7 @@ public sealed class BankingService(
         var description = BankingRules.NormalizeDescription(request.Description);
         var user = await userManager.FindByIdAsync(userId)
             ?? throw new AuthenticationException("Người dùng không tồn tại.");
-        if (!user.IsActive || await userManager.IsLockedOutAsync(user))
+        if (!user.IsActive || user.IsAdminSuspended || await userManager.IsLockedOutAsync(user))
             throw new AuthenticationException("Tài khoản không thể thực hiện giao dịch.");
 
         var requestHash = Hash(FormattableString.Invariant(

@@ -29,7 +29,8 @@ Hệ thống được xây dựng dưới dạng modular monolith bằng .NET 10
 
 - Database schema, constraints, migrations, deterministic seed và hướng dẫn dựng lại database sạch.
 - Role và demo user bằng ASP.NET Core Identity.
-- Login, refresh, logout, `/me`, khóa sau ba lần sai và Admin mở khóa.
+- Login, refresh, logout, `/me`, Identity lockout 15 phút sau ba lần sai và Admin có thể mở sớm.
+- Admin suspension độc lập dành riêng cho Customer, có lý do, audit và thu hồi phiên.
 - Customer xem danh sách/chi tiết tài khoản và lịch sử/chi tiết giao dịch đúng quyền.
 - Chuyển tiền nội bộ SUBank có transaction password, idempotency, SQL transaction nguyên tử, xử lý concurrency và audit.
 - Teller cash deposit có SQL transaction nguyên tử và audit.
@@ -45,7 +46,7 @@ Seed phải tạo bốn user riêng biệt bằng ASP.NET Core Identity:
 | `0900000001` | Customer | Chuyển tiền, xem account/history, tạo QR |
 | `0900000002` | Customer | Nhận tiền, quét QR và kiểm chứng realtime |
 | `teller` | Teller | Thực hiện Cash Deposit |
-| `admin` | Admin | Xem, lọc trạng thái người dùng, mở khóa user và xem Audit Log |
+| `admin` | Admin | Tìm kiếm, xem chi tiết, khóa/mở khóa Customer và xem Audit Log |
 
 Teller và Admin là hai user riêng, không gán đồng thời hai role này cho một demo user. Password và transaction password Development phải là dữ liệu demo rõ ràng, không tái sử dụng secret thật và được tài liệu hóa an toàn trong README dành cho Development.
 
@@ -82,7 +83,7 @@ Controller chỉ xử lý vấn đề vận chuyển dữ liệu HTTP. Controlle
 Teller và Admin có thể dùng chung Staff Portal/layout để giảm UI trùng lặp, nhưng authorization vẫn tách biệt:
 
 - Cash Deposit yêu cầu role Teller.
-- Unlock User và Audit Logs yêu cầu role Admin.
+- Quản lý trạng thái Customer và Audit Logs yêu cầu role Admin; server phải xác minh target có role Customer cùng `CustomerProfile`.
 - Teller truy cập Admin endpoint phải nhận `403`.
 - Admin truy cập Teller Cash Deposit endpoint phải nhận `403`.
 - Navigation ẩn theo role chỉ phục vụ UX và không thay thế API policy.
@@ -101,10 +102,13 @@ Không tạo `FailedLoginAttempts` hoặc `IsLocked` custom vì chúng trùng ch
 
 - `LockedAtUtc`: hiển thị thời điểm khóa cho Admin và cung cấp audit context.
 - `TransactionPasswordHash`: credential riêng, độc lập với login password.
+- `IsAdminSuspended`, `AdminSuspendedAtUtc`, `AdminSuspensionReason`, `AdminSuspendedByUserId`: trạng thái khóa thủ công dành riêng cho Customer.
 - `IsActive`.
 - `CreatedAtUtc`.
 
-Lần đăng nhập sai thứ ba liên tiếp khóa user cho đến khi Admin reset `LockoutEnd`, `AccessFailedCount` và `LockedAtUtc`. Đăng nhập thành công reset số lần thất bại. Thao tác khóa và mở khóa đều phải được audit.
+Lần đăng nhập sai thứ ba liên tiếp khóa user trong 15 phút. Hết thời hạn, Identity tự cho phép đăng nhập lại; Admin vẫn có thể mở khóa sớm bằng cách reset `LockoutEnd`, `AccessFailedCount` và `LockedAtUtc`. Đăng nhập thành công reset số lần thất bại.
+
+Admin suspension không dùng `LockoutEnd` hoặc `IsActive`. Admin chỉ được quản lý Customer: tìm theo họ tên/số điện thoại, xem chi tiết, khóa bằng modal xác nhận và lý do bắt buộc, hoặc mở lại tài khoản. Khóa thủ công cập nhật metadata, revoke `UserSession`/refresh token, ghi Audit Log rồi dọn Redis và gửi `ForceLogout` best-effort. Gỡ Admin suspension không xóa Identity lockout; mở Identity lockout không gỡ Admin suspension. Tab “Bị khóa” có thể gom cả hai loại nhưng UI phải chỉ rõ nguyên nhân. Không có API hoặc nút xóa Customer.
 
 ## Authentication và cookie
 
@@ -133,7 +137,7 @@ Customer dùng logical session tuyệt đối 15 phút từ lúc đăng nhập t
 
 Tab đã bind `SessionId` không được bootstrap/non-bootstrap sang session khác; tab mới chưa bind có thể nhận session từ shared cookie. Login, refresh và logout được serialize xuyên tab bằng Web Lock giữ đến khi `fetch`, response body và kiểm tra response tối thiểu hoàn tất để response `Set-Cookie` cũ không ghi đè cookie mới; không dùng lease có TTL. Response login không đọc được, sai schema hoặc lệch `SessionId` giữa header/body phải chặn restore và thử thu hồi tất cả session ID liên quan ngay trong khóa; không xác định được ID thì chặn toàn bộ restore cho đến lần login tường minh. Logout intent gắn đúng session, không khóa nhầm tab của session mới. Request pipeline ngoài phạm vi QR chụp generation và bearer token; response cũ bị bỏ nếu session thay đổi. Logout cookie gửi CSRF header cùng expected `SessionId`, không gửi bearer; Client chỉ xác nhận khi server trả marker đã revoke. Nếu cookie đã thuộc session mới hoặc cookie request lỗi, Client dùng endpoint riêng với bearer cũ và `credentials: omit` để chỉ revoke session cũ, không đọc/ghi cookie mới. SQL token family/`UserSession` được revoke trước; Redis và SignalR chạy best-effort sau commit. Phiên login bị Client từ chối cũng dùng đường bearer-bound không mutate cookie.
 
-Fallback authorization policy deny-by-default chạy trước ranh giới nghiệp vụ. Sau authentication và trước khi chạy nghiệp vụ, protected request kiểm tra `sub` và `sid` trong JWT với Redis, sau đó đối chiếu `UserSession` cùng trạng thái active/lockout của user trong SQL. Session thiếu, không khớp, đã revoke, hết hạn hoặc user bị khóa/vô hiệu hóa không được chạy protected operation. Khi Redis hoặc SQL không hoạt động, hệ thống phải fail closed: trả `503` cho dependency unavailable, không được âm thầm bỏ qua session security.
+Fallback authorization policy deny-by-default chạy trước ranh giới nghiệp vụ. Sau authentication và trước khi chạy nghiệp vụ, protected request kiểm tra `sub` và `sid` trong JWT với Redis, sau đó đối chiếu `UserSession` cùng trạng thái active, Identity lockout và Admin suspension của user trong SQL. Session thiếu, không khớp, đã revoke, hết hạn hoặc user bị khóa/vô hiệu hóa không được chạy protected operation. Khi Redis hoặc SQL không hoạt động, hệ thống phải fail closed: trả `503` cho dependency unavailable, không được âm thầm bỏ qua session security.
 
 SQL chỉ lưu session history và refresh token dưới dạng hash. Không log raw token, raw refresh token, session identifier, Redis key hoặc secret. SignalR `ForceLogout` gửi đến group của session cũ và chỉ cải thiện UX; Redis, SQL session history và middleware mới là lớp bảo mật có thẩm quyền. Hub chỉ chấp nhận `sid` hợp lệ ở cả Redis và SQL; `BalanceChanged` và `TransactionReceived` chỉ gửi tới group của active `sid`, không gửi theo user group. Client reconnect bằng access token hiện hành, gộp các event gần nhau trước khi tải lại và tự retry connection có backoff, nhưng REST/SQL vẫn là nguồn sự thật nếu event bị bỏ lỡ.
 

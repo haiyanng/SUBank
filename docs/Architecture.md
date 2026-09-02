@@ -22,7 +22,7 @@ Infrastructure Implementation
 SQL Server/Azure SQL, Redis hoặc external provider
 ```
 
-REST/JSON và SignalR hoạt động song song, không thay thế nhau. Login, account query, transfer, Teller Cash Deposit và Admin operation luôn đi qua REST API. SignalR chỉ thông báo `ForceLogout`, `TransactionReceived` hoặc `BalanceChanged`; khi nhận event, Client phải gọi REST API để lấy dữ liệu có thẩm quyền từ SQL. `ForceLogout` đi tới group của session bị thay thế hoặc thu hồi do logout/lockout; event ngân hàng chỉ đi tới group của active `sid` được cả Redis và durable session state trong SQL xác nhận, không broadcast theo user.
+REST/JSON và SignalR hoạt động song song, không thay thế nhau. Login, account query, transfer, Teller Cash Deposit và Admin operation luôn đi qua REST API. SignalR chỉ thông báo `ForceLogout`, `TransactionReceived` hoặc `BalanceChanged`; khi nhận event, Client phải gọi REST API để lấy dữ liệu có thẩm quyền từ SQL. `ForceLogout` đi tới group của session bị thay thế hoặc thu hồi do logout, Identity lockout hoặc Admin suspension; event ngân hàng chỉ đi tới group của active `sid` được cả Redis và durable session state trong SQL xác nhận, không broadcast theo user.
 
 Controller chỉ binding request, đọc authentication context, gọi Application use case và map response. Controller không query trực tiếp banking `DbContext` và không chứa business rule làm thay đổi balance.
 
@@ -87,9 +87,9 @@ teller → Teller
 admin  → Admin
 ```
 
-Teller chỉ nhìn thấy và truy cập dashboard cùng chức năng nộp tiền mặt. Admin chỉ nhìn thấy và truy cập dashboard, Quản lý người dùng và Nhật ký kiểm toán. Trang Quản lý người dùng hiển thị toàn bộ tài khoản, cho phép lọc trạng thái hoạt động/bị khóa và chỉ cung cấp thao tác mở khóa khi tài khoản thực sự đang bị khóa. Việc ẩn navigation chỉ phục vụ UX; API policy vẫn bắt buộc kiểm tra role.
+Teller chỉ nhìn thấy và truy cập dashboard cùng chức năng nộp tiền mặt. Admin chỉ nhìn thấy và truy cập dashboard, Quản lý người dùng và Nhật ký kiểm toán. Trang Quản lý người dùng chỉ truy vấn Customer, hỗ trợ tìm theo họ tên/số điện thoại, xem chi tiết và lọc Tất cả/Hoạt động/Bị khóa. Identity lockout 15 phút và Admin suspension được hiển thị bằng hai trạng thái độc lập. Khóa thủ công bắt buộc xác nhận, nhập lý do, ghi Audit Log và thu hồi phiên; mở khóa thủ công không xóa Identity lockout và ngược lại. Không có thao tác xóa Customer. Việc ẩn navigation chỉ phục vụ UX; API policy vẫn bắt buộc kiểm tra role và loại target ở server.
 
-Một user không được gán đồng thời Teller và Admin trong seed mặc định. Cách tách này giữ nguyên separation of duties: người tạo cash deposit không đồng thời có quyền mở khóa user hoặc xử lý administrative request.
+Một user không được gán đồng thời Teller và Admin trong seed mặc định. Cách tách này giữ nguyên separation of duties: người tạo cash deposit không đồng thời có quyền quản lý trạng thái Customer hoặc xử lý administrative request. API quản lý Customer không được tác động Teller/Admin.
 
 ## Topology theo môi trường
 

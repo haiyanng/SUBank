@@ -11,8 +11,9 @@ public sealed class SignalRRealtimeNotifier(
     ILogger<SignalRRealtimeNotifier> logger)
     : IRealtimeNotifier
 {
-    public Task ForceLogoutAsync(string sessionId, CancellationToken cancellationToken) =>
-        SendBestEffortAsync(RealtimeGroups.Session(sessionId), "ForceLogout", null, cancellationToken);
+    public Task ForceLogoutAsync(string sessionId, string reason, CancellationToken cancellationToken) =>
+        SendBestEffortAsync(RealtimeGroups.Session(sessionId), "ForceLogout",
+            new ForceLogoutNotification(reason), cancellationToken);
 
     public Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken) =>
         SendToActiveSessionBestEffortAsync(userId, "BalanceChanged",

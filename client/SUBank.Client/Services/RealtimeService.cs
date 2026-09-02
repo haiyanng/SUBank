@@ -92,14 +92,24 @@ public sealed class RealtimeService(ApiSession session, HttpClient httpClient, N
                 })
             .WithAutomaticReconnect()
             .Build();
-        nextConnection.On("ForceLogout", async () =>
+        nextConnection.On<ForceLogoutNotification>("ForceLogout", async notification =>
         {
             if (!IsCurrentConnection(nextConnection, generation)) return;
             if (!await session.EndFromServerAsync(generation)) return;
 
-            LastMessage = "Tài khoản đã đăng nhập ở nơi khác. Phiên này đã kết thúc.";
+            var (message, reason) = notification.Reason switch
+            {
+                ForceLogoutReasons.AdminSuspension =>
+                    ("Tài khoản đã bị khóa bởi quản trị viên.", "admin-suspended"),
+                ForceLogoutReasons.IdentityLockout =>
+                    ("Tài khoản đang bị tạm khóa do đăng nhập sai.", "identity-lockout"),
+                ForceLogoutReasons.SessionReplaced =>
+                    ("Tài khoản đã đăng nhập ở nơi khác. Phiên này đã kết thúc.", "session-replaced"),
+                _ => ("Phiên đăng nhập đã bị thu hồi.", "session-revoked")
+            };
+            LastMessage = message;
             NotifyMessageChanged();
-            navigation.NavigateTo("/login?reason=session-replaced");
+            navigation.NavigateTo($"/login?reason={reason}");
         });
         nextConnection.On<BalanceChangedNotification>("BalanceChanged", notification =>
         {

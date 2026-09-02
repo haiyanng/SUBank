@@ -37,7 +37,7 @@ public static class DependencyInjection
             options.Password.RequireNonAlphanumeric = true;
             options.Lockout.AllowedForNewUsers = true;
             options.Lockout.MaxFailedAccessAttempts = 3;
-            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromDays(36500);
+            options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             options.User.RequireUniqueEmail = false;
         }).AddRoles<IdentityRole>().AddEntityFrameworkStores<SUBankDbContext>();
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));

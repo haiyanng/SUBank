@@ -27,6 +27,7 @@ public sealed class ActiveSessionValidator(
                       session.RevokedAtUtc == null &&
                       session.ExpiresAtUtc > now &&
                       user.IsActive &&
+                      !user.IsAdminSuspended &&
                       (user.LockoutEnd == null || user.LockoutEnd <= now)
                 select session.Id)
                 .AnyAsync(cancellationToken);

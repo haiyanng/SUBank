@@ -270,14 +270,43 @@ public sealed class ApiSession(
         return result;
     }
 
-    public Task<List<UserManagementSummary>?> GetUsersAsync() => GetAsync<List<UserManagementSummary>>("api/admin/users");
-    public Task<List<LockedUserSummary>?> GetLockedUsersAsync() => GetAsync<List<LockedUserSummary>>("api/admin/locked-users");
+    public Task<List<CustomerManagementSummary>?> GetCustomersAsync(string? search = null)
+    {
+        var uri = "api/admin/customers";
+        if (!string.IsNullOrWhiteSpace(search))
+            uri += $"?search={Uri.EscapeDataString(search.Trim())}";
+
+        return GetAsync<List<CustomerManagementSummary>>(uri);
+    }
+
+    public Task<CustomerManagementDetail?> GetCustomerAsync(string userName) =>
+        GetAsync<CustomerManagementDetail>($"api/admin/customers/{Uri.EscapeDataString(userName)}");
+
     public Task<List<AuditLogSummary>?> GetAuditLogsAsync() => GetAsync<List<AuditLogSummary>>("api/admin/audit-logs");
 
-    public async Task UnlockAsync(string userName)
+    public async Task SuspendCustomerAsync(string userName, SuspendCustomerRequest request)
     {
         using var response = await SendAuthorizedAsync(() =>
-            Authorized(HttpMethod.Post, $"api/admin/users/{Uri.EscapeDataString(userName)}/unlock"));
+            Authorized(
+                HttpMethod.Post,
+                $"api/admin/customers/{Uri.EscapeDataString(userName)}/suspend",
+                JsonContent.Create(request)));
+        await EnsureSuccessAsync(response, redirectOnUnauthorized: false);
+    }
+
+    public async Task ResumeCustomerAsync(string userName)
+    {
+        using var response = await SendAuthorizedAsync(() =>
+            Authorized(HttpMethod.Post, $"api/admin/customers/{Uri.EscapeDataString(userName)}/resume"));
+        await EnsureSuccessAsync(response, redirectOnUnauthorized: false);
+    }
+
+    public async Task UnlockCustomerIdentityAsync(string userName)
+    {
+        using var response = await SendAuthorizedAsync(() =>
+            Authorized(
+                HttpMethod.Post,
+                $"api/admin/customers/{Uri.EscapeDataString(userName)}/identity-lockout/unlock"));
         await EnsureSuccessAsync(response, redirectOnUnauthorized: false);
     }
 

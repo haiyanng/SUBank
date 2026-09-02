@@ -17,11 +17,15 @@
 |---|---|---|
 | `Id` | `nvarchar(450)` | PK do Identity quản lý |
 | `TransactionPasswordHash` | `nvarchar(500)` | nullable; chỉ Customer cần |
-| `LockedAtUtc` | `datetimeoffset` | nullable |
+| `LockedAtUtc` | `datetimeoffset` | nullable; metadata của Identity lockout |
+| `IsAdminSuspended` | `bit` | required, default false; khóa thủ công độc lập |
+| `AdminSuspendedAtUtc` | `datetimeoffset` | nullable |
+| `AdminSuspensionReason` | `nvarchar(500)` | nullable; bắt buộc khi đang suspension |
+| `AdminSuspendedByUserId` | `nvarchar(450)` | nullable; Admin thực hiện |
 | `IsActive` | `bit` | required, default true |
 | `CreatedAtUtc` | `datetimeoffset` | required |
 
-Identity quản lý `UserName`, password hash, failure count, lockout và role. Customer có `UserName` bằng đúng `CustomerProfile.Phone`; Teller/Admin dùng username nghiệp vụ. Không ghi số liên hệ vào `AspNetUsers.PhoneNumber`.
+Identity quản lý `UserName`, password hash, failure count, lockout và role. Identity lockout dùng `AccessFailedCount`/`LockoutEnd`; Admin suspension dùng bốn cột riêng phía trên, không dùng chung trạng thái. Customer có `UserName` bằng đúng `CustomerProfile.Phone`; Teller/Admin dùng username nghiệp vụ. Không ghi số liên hệ vào `AspNetUsers.PhoneNumber`.
 
 ### CustomerProfile
 

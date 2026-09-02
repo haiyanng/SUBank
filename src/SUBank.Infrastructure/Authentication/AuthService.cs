@@ -14,6 +14,7 @@ using SUBank.Application.Abstractions;
 using SUBank.Application.Exceptions;
 using SUBank.Application.Rules;
 using SUBank.Contracts.Auth;
+using SUBank.Contracts.Realtime;
 using SUBank.Domain.Entities;
 using SUBank.Domain.Enums;
 using SUBank.Infrastructure.Identity;
@@ -36,8 +37,10 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
         var user = await userManager.FindByNameAsync(loginName);
         if (user is null || !user.IsActive)
             throw new AuthenticationException("Số điện thoại/tên đăng nhập hoặc mật khẩu không đúng.");
+        if (user.IsAdminSuspended)
+            throw new AuthenticationException("Tài khoản đã bị khóa bởi quản trị viên. Vui lòng liên hệ hỗ trợ.");
         if (await userManager.IsLockedOutAsync(user))
-            throw new AuthenticationException("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+            throw new AuthenticationException("Tài khoản đang bị tạm khóa do đăng nhập sai. Vui lòng thử lại sau 15 phút.");
         if (!await LoginNameMatchesCustomerProfileAsync(user, loginName, cancellationToken))
             throw new AuthenticationException("Số điện thoại/tên đăng nhập hoặc mật khẩu không đúng.");
 
@@ -49,7 +52,7 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             {
                 user.LockedAtUtc = DateTimeOffset.UtcNow;
                 EnsureIdentityUpdateSucceeded(await userManager.UpdateAsync(user));
-                dbContext.AuditLogs.Add(NewAudit(user.Id, "USER_LOCKED", AuditResult.Success));
+                dbContext.AuditLogs.Add(NewAudit(user.Id, "IDENTITY_LOCKOUT_TRIGGERED", AuditResult.Success));
             }
             if (wasLocked) await RevokeActiveSessionAfterLockAsync(user.Id, CancellationToken.None);
             await AuditAsync(user.Id, "LOGIN_FAILED", AuditResult.Failure, cancellationToken);
@@ -57,6 +60,13 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
         }
 
         EnsureIdentityUpdateSucceeded(await userManager.ResetAccessFailedCountAsync(user));
+        if (user.LockedAtUtc is not null)
+        {
+            user.LockedAtUtc = null;
+            EnsureIdentityUpdateSucceeded(await userManager.UpdateAsync(user));
+        }
+        if (await IsAdminSuspendedAsync(user.Id, cancellationToken))
+            throw new AuthenticationException("Tài khoản đã bị khóa bởi quản trị viên. Vui lòng liên hệ hỗ trợ.");
         var session = await CreateSessionAsync(
             user, Guid.NewGuid().ToString("N"), cancellationToken, auditLogin: false, createHistory: true);
         try
@@ -66,8 +76,10 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             if (!string.IsNullOrEmpty(oldSessionId) && oldSessionId != session.SessionId)
             {
                 await RevokePersistedSessionAsync(user.Id, oldSessionId, "REPLACED", cancellationToken);
-                await TryForceLogoutAsync(oldSessionId);
+                await TryForceLogoutAsync(oldSessionId, ForceLogoutReasons.SessionReplaced);
             }
+            if (await IsAdminSuspendedAsync(user.Id, cancellationToken))
+                throw new AuthenticationException("Tài khoản đã bị khóa bởi quản trị viên. Vui lòng liên hệ hỗ trợ.");
             await AuditAsync(user.Id, "LOGIN_SUCCESS", AuditResult.Success, cancellationToken);
             return session;
         }
@@ -111,7 +123,7 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             throw new AuthenticationException("Phiên đăng nhập không còn hiệu lực.");
 
         var user = await userManager.FindByIdAsync(snapshot.UserId);
-        if (user is null || !user.IsActive || await userManager.IsLockedOutAsync(user))
+        if (user is null || !user.IsActive || user.IsAdminSuspended || await userManager.IsLockedOutAsync(user))
             throw new AuthenticationException("Tài khoản không thể tiếp tục phiên đăng nhập.");
 
         var claimed = await dbContext.RefreshTokens
@@ -207,7 +219,7 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
         }
 
         await TryRevokeActiveSessionAsync(token.UserId, token.SessionId);
-        await TryForceLogoutAsync(token.SessionId);
+        await TryForceLogoutAsync(token.SessionId, ForceLogoutReasons.SessionRevoked);
         return RefreshCookieLogoutResult.Revoked;
     }
 
@@ -309,7 +321,7 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
                 CancellationToken.None);
             await transaction.CommitAsync(CancellationToken.None);
             await TryRevokeActiveSessionAsync(token.UserId, token.SessionId);
-            await TryForceLogoutAsync(token.SessionId);
+            await TryForceLogoutAsync(token.SessionId, ForceLogoutReasons.SecurityEvent);
         }
 
         throw new AuthenticationException("Phiên đăng nhập đã hết hạn hoặc bị thu hồi.");
@@ -378,7 +390,7 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
             await RevokePersistedSessionAsync(userId, activeSessionId, "USER_LOCKED", cancellationToken);
 
         await activeSessionStore.RevokeAsync(userId, activeSessionId, cancellationToken);
-        await TryForceLogoutAsync(activeSessionId);
+        await TryForceLogoutAsync(activeSessionId, ForceLogoutReasons.IdentityLockout);
     }
 
     private async Task CompensateFailedSessionActivationAsync(string userId, string sessionId)
@@ -432,19 +444,28 @@ public sealed class AuthService(UserManager<ApplicationUser> userManager, SUBank
     {
         await RevokePersistedSessionAsync(userId, sessionId, reason, cancellationToken);
         await TryRevokeActiveSessionAsync(userId, sessionId);
-        await TryForceLogoutAsync(sessionId);
+        await TryForceLogoutAsync(sessionId, ForceLogoutReasons.SessionRevoked);
     }
 
-    private async Task TryForceLogoutAsync(string sessionId)
+    private async Task TryForceLogoutAsync(string sessionId, string reason)
     {
         try
         {
-            await realtimeNotifier.ForceLogoutAsync(sessionId, CancellationToken.None);
+            await realtimeNotifier.ForceLogoutAsync(sessionId, reason, CancellationToken.None);
         }
         catch (Exception exception)
         {
             logger.LogWarning(exception, "Không thể gửi thông báo ForceLogout best-effort");
         }
+    }
+
+    private async Task<bool> IsAdminSuspendedAsync(string userId, CancellationToken cancellationToken)
+    {
+        var value = await dbContext.Users.AsNoTracking()
+            .Where(x => x.Id == userId)
+            .Select(x => (bool?)x.IsAdminSuspended)
+            .SingleOrDefaultAsync(cancellationToken);
+        return value is not false;
     }
 
     private Task<UserSession?> LockSessionAsync(

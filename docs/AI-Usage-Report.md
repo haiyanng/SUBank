@@ -748,3 +748,17 @@ Giải thích milestone vừa hoàn thành từ số 0: hành động của user
 - Vấn đề còn lại: chưa commit/push; cần chủ dự án xác nhận trực quan trên trình duyệt.
 - Con người review: CHỜ XÁC NHẬN
 - Kinh nghiệm rút ra: trước khi chạy thêm tiến trình cần kiểm tra cổng; lỗi bind “address already in use” có thể chỉ ra instance mong muốn đã chạy, không phải lỗi ứng dụng.
+
+## Entry 053 - Quản lý Customer và tách hai cơ chế khóa
+
+- Ngày: 2026-09-02
+- Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
+- Tính năng/công việc: giới hạn trang Quản lý người dùng cho Customer và tách Identity lockout khỏi Admin suspension.
+- Tóm tắt prompt/công việc thực tế: chủ dự án yêu cầu chỉ quản lý Customer, tìm theo tên/số điện thoại, xem chi tiết, khóa/mở khóa, bắt buộc modal xác nhận cùng lý do và Audit Log, không xóa Customer; Identity lockout do sai mật khẩu phải tự hết sau 15 phút còn khóa thủ công của Admin phải là trạng thái riêng.
+- File/module bị tác động: contract và abstraction quản trị; `ApplicationUser`, EF configuration/migration; `StaffService`, `AdminController`; auth/session/SignalR; `ApiSession`, `StaffUsers.razor`, `StaffAudit.razor`, CSS; README và các tài liệu kiến trúc/bảo mật/database/blueprint cùng hai nhật ký nối tiếp.
+- Package/database: không thêm package; thêm migration `AddAdminCustomerSuspension` với trạng thái, thời điểm, lý do và Admin thực hiện.
+- Kiểm chứng: build toàn solution Debug thành công, 0 warning và 0 error; không chạy test theo yêu cầu hiện tại của chủ dự án.
+- Kết quả: API chỉ chấp nhận target có role Customer cùng `CustomerProfile`; UI có tìm kiếm, lọc, chi tiết, modal khóa và thao tác mở riêng cho từng loại khóa. Suspension revoke session/refresh token và ghi lý do vào Audit Log; Client nhận đúng lý do ForceLogout. Không có API xóa Customer.
+- Vấn đề còn lại: cần khởi động lại API để áp dụng migration và chủ dự án xác nhận luồng trực quan; thay đổi chưa commit/push.
+- Con người review: CHỜ XÁC NHẬN
+- Kinh nghiệm rút ra: Identity lockout và quyết định khóa thủ công có nguyên nhân, thời hạn và cách mở khác nhau; gộp chúng vào một cờ hoặc một nút mở khóa sẽ dễ tạo lỗi quyền và làm mất dấu vết audit.

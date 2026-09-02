@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.Qr;
+using SUBank.Contracts.Realtime;
 using SUBank.Contracts.Staff;
 using SUBank.Contracts.Statements;
 using SUBank.Contracts.Transfers;
@@ -86,7 +87,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
                 options.HttpMessageHandlerFactory = _ => factory.Server.CreateHandler();
             })
             .Build();
-        hub.On("ForceLogout", () => forced.TrySetResult());
+        hub.On<ForceLogoutNotification>("ForceLogout", _ => forced.TrySetResult());
         await hub.StartAsync();
 
         using var secondClient = factory.CreateClient();

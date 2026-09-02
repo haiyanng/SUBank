@@ -61,7 +61,7 @@ Tài khoản ngân hàng demo:
 - Customer `0900000001`: tài khoản chính `0900000001`; tài khoản phụ `1000000003`, `1234567890`, `1234567891`.
 - Customer `0900000002`: tài khoản chính `0900000002`; tài khoản phụ `1000000004`, `2234567890`, `2234567891`.
 
-Với Customer demo, số điện thoại, tên đăng nhập và số tài khoản chính là cùng một giá trị. Teller và Admin tiếp tục dùng username nghiệp vụ. Seed Development tự đổi username `customer.a`/`customer.b` và số tài khoản chính cũ tại chỗ để giữ nguyên ID, số dư và lịch sử giao dịch; bản ghi Identity legacy trùng nhưng không có hồ sơ, giao dịch hoặc audit sẽ được xóa an toàn.
+Với Customer demo, số điện thoại và tên đăng nhập là cùng một giá trị. Teller và Admin tiếp tục dùng username nghiệp vụ. Seed Development tự đổi username `customer.a`/`customer.b` và số tài khoản chính cũ tại chỗ để giữ nguyên ID, số dư và lịch sử giao dịch; bản ghi Identity legacy trùng nhưng không có hồ sơ, giao dịch hoặc audit sẽ được xóa an toàn. Ứng dụng không cung cấp API xóa Customer thật; Customer có hồ sơ chỉ được khóa hoặc mở khóa bởi Admin.
 
 Phiên và access token Customer hết hạn tuyệt đối sau 15 phút từ lúc đăng nhập. Tab foreground tự trở về login; tab bị browser suspend kiểm tra lại ngay khi visible/focus/pageshow. Reload chỉ khôi phục phần thời gian còn lại và server vẫn từ chối protected API sau deadline. Teller/Admin dùng access token 15 phút, refresh theo nhu cầu và logical session tối đa bảy ngày.
 
@@ -71,6 +71,6 @@ Các secret trên chỉ là dữ liệu demo. Production phải cấp `Connectio
 
 ## Phạm vi
 
-P0 đã có authentication/authorization, khóa và mở khóa user, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. P1 đã có active-session control, SignalR notification, hồ sơ khách hàng chỉ đọc, sao kê tháng/năm kèm PDF server và SUBank QR nội bộ; AI chưa triển khai. QR hỗ trợ tạo ảnh, quét camera hoặc upload PNG/JPEG/WebP rồi điền trước form chuyển tiền; camera trên trình duyệt yêu cầu HTTPS. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md) và [Nhật ký lỗi/phát hiện kỹ thuật](docs/Issue-Register.md).
+P0 đã có authentication/authorization, Identity lockout 15 phút, quản lý Customer có tìm kiếm/xem chi tiết/khóa thủ công với lý do và Audit Log, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. Admin suspension độc lập với Identity lockout, thu hồi phiên đang hoạt động và không cho xóa Customer. P1 đã có active-session control, SignalR notification, hồ sơ khách hàng chỉ đọc, sao kê tháng/năm kèm PDF server và SUBank QR nội bộ; AI chưa triển khai. QR hỗ trợ tạo ảnh, quét camera hoặc upload PNG/JPEG/WebP rồi điền trước form chuyển tiền; camera trên trình duyệt yêu cầu HTTPS. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md) và [Nhật ký lỗi/phát hiện kỹ thuật](docs/Issue-Register.md).
 
 Giao diện dùng Bootstrap và visual system riêng của SUBank, hỗ trợ responsive từ 320px, trạng thái loading/error/empty và điều hướng theo Customer/Teller/Admin. Figma vẫn `PENDING` cho đến khi giao diện chạy thật được chủ dự án duyệt.

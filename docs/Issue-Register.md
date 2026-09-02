@@ -538,3 +538,17 @@ Theo quyết định của chủ dự án, lượt này chỉ xử lý lỗi rõ
 | Ngày | Thay đổi | Con người review |
 |---|---|---|
 | 2026-09-02 | Dọn hai user seed legacy không còn liên kết; hai Customer thật và toàn bộ lịch sử giao dịch được giữ nguyên. | CHỜ XÁC NHẬN |
+
+## 18. Phụ lục tách Identity lockout và Admin suspension (append-only)
+
+### 2026-09-02 – Trạng thái X50
+
+| Mã | Trạng thái mới | Phát hiện và cách xử lý |
+|---|---|---|
+| X50 | ĐÃ SỬA TRONG WORKING TREE – CHỜ DEMO XÁC NHẬN | Trang Quản lý người dùng cũ lấy cả Customer/Teller/Admin và dùng chung thao tác Identity unlock nên Admin có thể tác động nhầm staff, đồng thời chưa có khóa thủ công có lý do. Đã đổi API và UI thành Customer-only, tìm theo họ tên/số điện thoại, xem chi tiết và tách `Identity Lockout` 15 phút khỏi `Admin suspension`. Suspension dùng các cột riêng, bắt buộc lý do, revoke session/refresh token, ghi Audit Log và gửi ForceLogout đúng nguyên nhân; resume không xóa Identity lockout và clear Identity lockout không gỡ suspension. Không cung cấp endpoint xóa Customer. |
+
+### Nhật ký cập nhật nối tiếp
+
+| Ngày | Thay đổi | Con người review |
+|---|---|---|
+| 2026-09-02 | Hoàn thiện quản lý Customer và tách hai cơ chế khóa; migration mới đã tạo, solution build thành công; chưa chạy test theo quyết định hiện tại. | CHỜ XÁC NHẬN |

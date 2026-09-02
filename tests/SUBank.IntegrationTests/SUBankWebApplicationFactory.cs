@@ -36,10 +36,10 @@ public sealed class TestRealtimeNotifier(SignalRRealtimeNotifier inner) : IRealt
     public ConcurrentQueue<(string UserId, string AccountNumber)> BalanceChanges { get; } = new();
     public ConcurrentQueue<(string UserId, string ReferenceNo, string AccountNumber)> Transactions { get; } = new();
 
-    public Task ForceLogoutAsync(string sessionId, CancellationToken cancellationToken)
+    public Task ForceLogoutAsync(string sessionId, string reason, CancellationToken cancellationToken)
     {
         ForcedSessions.Enqueue(sessionId);
-        return inner.ForceLogoutAsync(sessionId, cancellationToken);
+        return inner.ForceLogoutAsync(sessionId, reason, cancellationToken);
     }
 
     public Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken)

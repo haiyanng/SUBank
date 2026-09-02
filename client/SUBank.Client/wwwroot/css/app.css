@@ -242,6 +242,26 @@ textarea.form-control { min-height: 90px; }
 .history-filter.is-active { color: #211806; border-color: var(--su-gold); background: var(--su-gold-soft); }
 .history-filter:focus-visible { outline: 3px solid rgba(181, 138, 50, .2); outline-offset: 2px; }
 
+.user-management-search { display: grid; grid-template-columns: minmax(16rem, 1fr) auto auto; align-items: end; gap: .75rem; }
+.user-management-search .form-label { margin-bottom: .4rem; }
+.user-status-list,
+.user-detail-status { display: flex; flex-wrap: wrap; gap: .4rem; }
+.user-phone { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.user-lock-note { display: flex; flex-direction: column; gap: .12rem; color: #4b4f56; font-size: .8rem; }
+.user-lock-note + .user-lock-note { margin-top: .45rem; }
+.user-lock-note small { color: var(--su-muted); }
+.user-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .45rem; }
+.user-row-actions .btn { white-space: nowrap; }
+.user-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.25rem; margin: 0; }
+.user-detail-grid > div { min-width: 0; padding: .8rem 0; border-bottom: 1px solid var(--su-border); }
+.user-detail-grid .user-detail-wide { grid-column: 1 / -1; }
+.user-detail-grid dt { margin-bottom: .22rem; color: var(--su-muted); font-size: .75rem; font-weight: 700; }
+.user-detail-grid dd { margin: 0; overflow-wrap: anywhere; font-weight: 650; }
+.modal-content { overflow: hidden; border: 0; border-radius: 1rem; box-shadow: 0 1.2rem 3.5rem rgba(17, 17, 17, .2); }
+.modal-header,
+.modal-footer { border-color: var(--su-border); }
+.audit-details { min-width: 12rem; max-width: 24rem; overflow-wrap: anywhere; white-space: normal; }
+
 .transaction-history { margin-top: 1.5rem; }
 .transaction-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .65rem; }
 .transaction-history-heading h2 { margin: 0; font-size: 1rem; }
@@ -358,6 +378,11 @@ textarea.form-control { min-height: 90px; }
     .table-responsive { margin-inline: -.25rem; }
     .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .history-toolbar { grid-template-columns: 1fr; }
+    .user-management-search { grid-template-columns: 1fr; }
+    .user-management-search .btn { width: 100%; }
+    .user-row-actions { justify-content: flex-start; margin-top: .45rem; }
+    .user-detail-grid { grid-template-columns: 1fr; }
+    .user-detail-grid .user-detail-wide { grid-column: 1; }
     .transaction-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: .7rem; padding: .9rem; }
     .transaction-amount { grid-column: 2; text-align: left; }
     .transaction-chevron { grid-column: 3; grid-row: 1 / span 2; }

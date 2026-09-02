@@ -6,10 +6,12 @@ using SUBank.Application.Abstractions;
 using SUBank.Application.Exceptions;
 using SUBank.Application.Rules;
 using SUBank.Contracts.Staff;
+using SUBank.Contracts.Realtime;
 using SUBank.Domain.Entities;
 using SUBank.Domain.Enums;
 using SUBank.Infrastructure.Identity;
 using SUBank.Infrastructure.Persistence;
+using SUBank.Infrastructure.Profiles;
 
 namespace SUBank.Infrastructure.Banking;
 
@@ -17,6 +19,7 @@ public sealed class StaffService(
     SUBankDbContext dbContext,
     UserManager<ApplicationUser> userManager,
     IOptions<IdentityOptions> identityOptions,
+    IActiveSessionStore activeSessionStore,
     IRealtimeNotifier realtimeNotifier,
     ILogger<StaffService> logger) : IStaffService
 {
@@ -47,7 +50,7 @@ public sealed class StaffService(
 
         var teller = await userManager.FindByIdAsync(tellerUserId)
             ?? throw new AuthenticationException("Người dùng không tồn tại.");
-        if (!teller.IsActive || await userManager.IsLockedOutAsync(teller))
+        if (!teller.IsActive || teller.IsAdminSuspended || await userManager.IsLockedOutAsync(teller))
             throw new AuthenticationException("Tài khoản không thể thực hiện giao dịch.");
 
         BankingRules.ValidateIdempotencyKey(idempotencyKey);
@@ -147,64 +150,107 @@ public sealed class StaffService(
         }
     }
 
-    public async Task<IReadOnlyList<UserManagementSummary>> GetUsersAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<CustomerManagementSummary>> GetCustomersAsync(
+        string? search,
+        CancellationToken cancellationToken)
     {
+        var normalizedSearch = CustomerAdministrationRules.NormalizeSearch(search);
         var now = DateTimeOffset.UtcNow;
         var lockoutThreshold = identityOptions.Value.Lockout.MaxFailedAccessAttempts;
-        var users = await userManager.Users.AsNoTracking()
-            .OrderBy(x => x.UserName)
-            .Select(x => new
+        var query =
+            from profile in dbContext.CustomerProfiles.AsNoTracking()
+            join user in userManager.Users.AsNoTracking() on profile.UserId equals user.Id
+            join userRole in dbContext.UserRoles.AsNoTracking() on user.Id equals userRole.UserId
+            join role in dbContext.Roles.AsNoTracking() on userRole.RoleId equals role.Id
+            where role.NormalizedName == "CUSTOMER" && user.IsActive
+            select new
             {
-                x.Id,
-                x.UserName,
-                x.IsActive,
-                x.LockoutEnabled,
-                x.LockoutEnd,
-                x.AccessFailedCount,
-                x.LockedAtUtc
-            })
+                user.UserName,
+                profile.FullName,
+                profile.Phone,
+                user.LockoutEnabled,
+                user.LockoutEnd,
+                user.AccessFailedCount,
+                user.LockedAtUtc,
+                user.IsAdminSuspended,
+                user.AdminSuspendedAtUtc,
+                user.AdminSuspensionReason
+            };
+
+        if (normalizedSearch is not null)
+            query = query.Where(x =>
+                x.FullName.Contains(normalizedSearch) || x.Phone.Contains(normalizedSearch));
+
+        var customers = await query
+            .OrderBy(x => x.FullName)
+            .ThenBy(x => x.Phone)
+            .Take(200)
             .ToListAsync(cancellationToken);
 
-        if (users.Count == 0) return [];
-
-        var userIds = users.Select(x => x.Id).ToList();
-        var roleAssignments = await (
-                from userRole in dbContext.UserRoles.AsNoTracking()
-                join role in dbContext.Roles.AsNoTracking() on userRole.RoleId equals role.Id
-                where userIds.Contains(userRole.UserId)
-                select new { userRole.UserId, role.Name })
-            .ToListAsync(cancellationToken);
-        var rolesByUser = roleAssignments
-            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
-            .GroupBy(x => x.UserId)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(x => x.Name!).Distinct(StringComparer.Ordinal).OrderBy(x => x).ToArray(),
-                StringComparer.Ordinal);
-
-        return users.Select(user =>
+        return customers.Select(customer =>
         {
-            var isLocked = user.LockoutEnabled && user.LockoutEnd is { } lockoutEnd && lockoutEnd > now;
-            var failedAttempts = isLocked && user.AccessFailedCount == 0
+            var isIdentityLocked = customer.LockoutEnabled &&
+                customer.LockoutEnd is { } lockoutEnd && lockoutEnd > now;
+            var failedAttempts = isIdentityLocked && customer.AccessFailedCount == 0
                 ? lockoutThreshold
-                : user.AccessFailedCount;
-            var roles = rolesByUser.TryGetValue(user.Id, out var assignedRoles)
-                ? assignedRoles
-                : [];
-            return new UserManagementSummary(
-                user.UserName ?? string.Empty,
-                roles,
-                user.IsActive,
-                isLocked,
+                : customer.AccessFailedCount;
+            return new CustomerManagementSummary(
+                customer.UserName ?? string.Empty,
+                customer.FullName,
+                customer.Phone,
+                isIdentityLocked,
                 failedAttempts,
-                user.LockedAtUtc);
+                isIdentityLocked ? customer.LockedAtUtc : null,
+                isIdentityLocked ? customer.LockoutEnd : null,
+                customer.IsAdminSuspended,
+                customer.AdminSuspendedAtUtc,
+                customer.AdminSuspensionReason);
         }).ToList();
     }
 
+    public async Task<CustomerManagementDetail> GetCustomerAsync(
+        string userName,
+        CancellationToken cancellationToken)
+    {
+        var (user, profile) = await FindCustomerAsync(userName, cancellationToken);
+        var isIdentityLocked = await userManager.IsLockedOutAsync(user);
+        var failedAttempts = isIdentityLocked && user.AccessFailedCount == 0
+            ? identityOptions.Value.Lockout.MaxFailedAccessAttempts
+            : user.AccessFailedCount;
+        string? suspendedByUserName = null;
+        if (!string.IsNullOrWhiteSpace(user.AdminSuspendedByUserId))
+        {
+            suspendedByUserName = await dbContext.Users.AsNoTracking()
+                .Where(x => x.Id == user.AdminSuspendedByUserId)
+                .Select(x => x.UserName)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return new CustomerManagementDetail(
+            user.UserName ?? string.Empty,
+            profile.FullName,
+            profile.DateOfBirth,
+            PersonalDataMasking.MaskIdentityCardNumber(profile.IdentityCardNumber),
+            profile.Phone,
+            profile.Email,
+            profile.PermanentAddress,
+            profile.TemporaryAddress,
+            profile.CreatedAtUtc,
+            profile.UpdatedAtUtc,
+            isIdentityLocked,
+            failedAttempts,
+            isIdentityLocked ? user.LockedAtUtc : null,
+            isIdentityLocked ? user.LockoutEnd : null,
+            user.IsAdminSuspended,
+            user.AdminSuspendedAtUtc,
+            user.AdminSuspensionReason,
+            suspendedByUserName);
+    }
+
     public async Task<IReadOnlyList<LockedUserSummary>> GetLockedUsersAsync(CancellationToken cancellationToken) =>
-        (await GetUsersAsync(cancellationToken))
-            .Where(x => x.IsLocked)
-            .Select(x => new LockedUserSummary(x.UserName, x.FailedAttempts, x.LockedAtUtc))
+        (await GetCustomersAsync(null, cancellationToken))
+            .Where(x => x.IsIdentityLocked)
+            .Select(x => new LockedUserSummary(x.UserName, x.FailedAttempts, x.IdentityLockedAtUtc))
             .ToList();
 
     public async Task<IReadOnlyList<AuditLogSummary>> GetAuditLogsAsync(CancellationToken cancellationToken) =>
@@ -212,20 +258,172 @@ public sealed class StaffService(
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.Id)
             .Take(200)
-            .Select(x => new AuditLogSummary(x.Id, x.UserId, x.Action, x.EntityType, x.EntityId, x.Result.ToString(), x.CreatedAtUtc, x.CorrelationId))
+            .Select(x => new AuditLogSummary(x.Id, x.UserId, x.Action, x.EntityType, x.EntityId,
+                x.Result.ToString(), x.CreatedAtUtc, x.CorrelationId, x.Details))
             .ToListAsync(cancellationToken);
 
-    public async Task UnlockUserAsync(string adminUserId, string userName, CancellationToken cancellationToken)
+    public async Task SuspendCustomerAsync(
+        string adminUserId,
+        string userName,
+        SuspendCustomerRequest request,
+        CancellationToken cancellationToken)
     {
-        var user = await userManager.FindByNameAsync(userName) ?? throw new NotFoundException("Không tìm thấy người dùng.");
+        if (request is null) throw new BusinessRuleException("Dữ liệu khóa tài khoản không hợp lệ.");
+        var reason = CustomerAdministrationRules.NormalizeSuspensionReason(request.Reason);
+        var (user, _) = await FindCustomerAsync(userName, cancellationToken);
+        if (user.IsAdminSuspended)
+            throw new ConflictException("Khách hàng đã bị khóa bởi quản trị viên.");
+
+        var now = DateTimeOffset.UtcNow;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var sessionIds = await dbContext.UserSessions.AsNoTracking()
+            .Where(x => x.UserId == user.Id && x.RevokedAtUtc == null)
+            .Select(x => x.SessionId)
+            .ToListAsync(cancellationToken);
+
+        user.IsAdminSuspended = true;
+        user.AdminSuspendedAtUtc = now;
+        user.AdminSuspensionReason = reason;
+        user.AdminSuspendedByUserId = adminUserId;
+
+        await dbContext.UserSessions
+            .Where(x => x.UserId == user.Id && x.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.RevokedAtUtc, now)
+                .SetProperty(x => x.RevocationReason, "ADMIN_SUSPENSION"), cancellationToken);
+        await dbContext.RefreshTokens
+            .Where(x => x.UserId == user.Id && x.RevokedAtUtc == null)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.RevokedAtUtc, now), cancellationToken);
+        EnsureIdentityUpdateSucceeded(await userManager.UpdateAsync(user));
+
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = adminUserId,
+            Action = "CUSTOMER_SUSPENDED_BY_ADMIN",
+            EntityType = "ApplicationUser",
+            EntityId = user.Id,
+            Result = AuditResult.Success,
+            Details = $"Lý do: {reason}",
+            CreatedAtUtc = now
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await RevokeDistributedSessionsBestEffortAsync(user.Id, sessionIds);
+    }
+
+    public async Task ResumeCustomerAsync(
+        string adminUserId,
+        string userName,
+        CancellationToken cancellationToken)
+    {
+        var (user, _) = await FindCustomerAsync(userName, cancellationToken);
+        if (!user.IsAdminSuspended)
+            throw new ConflictException("Khách hàng không bị khóa bởi quản trị viên.");
+
+        var now = DateTimeOffset.UtcNow;
+        var previousReason = user.AdminSuspensionReason;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        user.IsAdminSuspended = false;
+        user.AdminSuspendedAtUtc = null;
+        user.AdminSuspensionReason = null;
+        user.AdminSuspendedByUserId = null;
+        EnsureIdentityUpdateSucceeded(await userManager.UpdateAsync(user));
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = adminUserId,
+            Action = "CUSTOMER_SUSPENSION_LIFTED_BY_ADMIN",
+            EntityType = "ApplicationUser",
+            EntityId = user.Id,
+            Result = AuditResult.Success,
+            Details = string.IsNullOrWhiteSpace(previousReason) ? null : $"Lý do khóa trước đó: {previousReason}",
+            CreatedAtUtc = now
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task ClearCustomerIdentityLockoutAsync(
+        string adminUserId,
+        string userName,
+        CancellationToken cancellationToken)
+    {
+        var (user, _) = await FindCustomerAsync(userName, cancellationToken);
+        if (!await userManager.IsLockedOutAsync(user))
+            throw new ConflictException("Khách hàng không bị tạm khóa do đăng nhập sai.");
+
+        var now = DateTimeOffset.UtcNow;
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         EnsureIdentityUpdateSucceeded(await userManager.SetLockoutEndDateAsync(user, null));
         EnsureIdentityUpdateSucceeded(await userManager.ResetAccessFailedCountAsync(user));
         user.LockedAtUtc = null;
         EnsureIdentityUpdateSucceeded(await userManager.UpdateAsync(user));
-        dbContext.AuditLogs.Add(new AuditLog { UserId = adminUserId, Action = "UNLOCK_USER", EntityType = "ApplicationUser", EntityId = user.Id, Result = AuditResult.Success, CreatedAtUtc = DateTimeOffset.UtcNow });
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = adminUserId,
+            Action = "IDENTITY_LOCKOUT_CLEARED_BY_ADMIN",
+            EntityType = "ApplicationUser",
+            EntityId = user.Id,
+            Result = AuditResult.Success,
+            CreatedAtUtc = now
+        });
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<(ApplicationUser User, CustomerProfile Profile)> FindCustomerAsync(
+        string userName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(userName) || userName.Length > AuthenticationRules.MaximumLoginNameLength)
+            throw new NotFoundException("Không tìm thấy khách hàng.");
+
+        var user = await userManager.FindByNameAsync(userName.Trim());
+        if (user is null || !user.IsActive || !await userManager.IsInRoleAsync(user, "Customer"))
+            throw new NotFoundException("Không tìm thấy khách hàng.");
+
+        var profile = await dbContext.CustomerProfiles
+            .SingleOrDefaultAsync(x => x.UserId == user.Id, cancellationToken);
+        return profile is null
+            ? throw new NotFoundException("Không tìm thấy khách hàng.")
+            : (user, profile);
+    }
+
+    private async Task RevokeDistributedSessionsBestEffortAsync(
+        string userId,
+        IReadOnlyCollection<string> persistedSessionIds)
+    {
+        var sessionIds = persistedSessionIds.ToHashSet(StringComparer.Ordinal);
+        string? activeSessionId = null;
+        try
+        {
+            activeSessionId = await activeSessionStore.GetActiveSessionIdAsync(userId, CancellationToken.None);
+            if (!string.IsNullOrWhiteSpace(activeSessionId))
+            {
+                sessionIds.Add(activeSessionId);
+                await activeSessionStore.RevokeAsync(userId, activeSessionId, CancellationToken.None);
+            }
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(exception, "Không thể thu hồi Redis session sau khi Admin khóa Customer {UserId}", userId);
+        }
+
+        foreach (var sessionId in sessionIds)
+        {
+            try
+            {
+                await realtimeNotifier.ForceLogoutAsync(
+                    sessionId, ForceLogoutReasons.AdminSuspension, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                logger.LogWarning(exception,
+                    "Không thể gửi ForceLogout sau khi Admin khóa Customer {UserId}, session {SessionId}",
+                    userId,
+                    sessionId);
+            }
+        }
     }
 
     private static CashDepositResponse ToCashDepositResponse(FinancialTransaction transaction, bool replayed) =>
