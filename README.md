@@ -1,6 +1,6 @@
 # SUBank V2
 
-Đây là SUBank V2.4, ứng dụng ngân hàng mô phỏng dạng modular monolith xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity. Repository hiện đã vượt phạm vi scaffold P0 và đang hoàn thiện các feature P1.
+SUBank 3S là ứng dụng ngân hàng mô phỏng dạng modular monolith xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity. Repository hiện đã vượt phạm vi scaffold P0 và đang hoàn thiện các feature P1.
 
 ## Yêu cầu môi trường
 
