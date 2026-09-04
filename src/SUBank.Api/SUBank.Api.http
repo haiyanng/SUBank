@@ -1,4 +1,4 @@
-@SUBank.Api_HostAddress = http://localhost:5247
+@SUBank.Api_HostAddress = https://localhost:7247
 
 GET {{SUBank.Api_HostAddress}}/health
 Accept: application/json

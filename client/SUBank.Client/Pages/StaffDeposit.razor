@@ -25,9 +25,28 @@
                                    autocomplete="off"
                                    inputmode="numeric"
                                    maxlength="10"
-                                   @bind-Value="model.Account" />
+                                   @bind-Value="model.Account"
+                                   @bind-Value:after="ResetAccountResolution"
+                                   @onblur="ResolveAccountAsync" />
                         <ValidationMessage For="@(() => model.Account)" />
+                        @if (resolvingAccount)
+                        {
+                            <div class="form-text" role="status">Đang kiểm tra tài khoản...</div>
+                        }
+                        else if (accountLookupError is not null)
+                        {
+                            <div class="text-danger mt-1" role="alert">@accountLookupError</div>
+                        }
                     </div>
+
+                    @if (IsAccountResolved)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label" for="deposit-recipient-name">Tên khách hàng</label>
+                            <input id="deposit-recipient-name" class="form-control"
+                                   value="@resolvedAccount!.DisplayName" readonly />
+                        </div>
+                    }
 
                     <div class="mb-3">
                         <label class="form-label" for="deposit-amount">Số tiền</label>
@@ -36,6 +55,7 @@
                                      min="0.01"
                                      max="9999999999999999.99"
                                      step="0.01"
+                                     ParsingErrorMessage="Vui lòng điền số tiền."
                                      @bind-Value="model.Amount" />
                         <ValidationMessage For="@(() => model.Amount)" />
                     </div>
@@ -54,7 +74,8 @@
                         <div class="alert @(success ? "alert-success" : "alert-danger")" role="alert">@message</div>
                     }
 
-                    <button class="btn btn-primary btn-lg w-100" disabled="@busy">
+                    <button class="btn btn-primary btn-lg w-100"
+                            disabled="@(busy || resolvingAccount || !IsAccountResolved)">
                         @(busy ? "Đang xử lý..." : "Ghi nhận nộp tiền")
                     </button>
                 </div>
@@ -66,14 +87,31 @@
 @code {
     private FormModel model = new();
     private readonly IdempotencyIntentTracker<DepositIntent> idempotencyIntent = new();
+    private ResolvedAccount? resolvedAccount;
+    private string? accountLookupError;
     private string? message;
+    private bool resolvingAccount;
     private bool success;
     private bool busy;
+    private long accountLookupVersion;
+    private bool IsAccountResolved =>
+        resolvedAccount is not null &&
+        string.Equals(
+            resolvedAccount.AccountNumber,
+            (model.Account ?? string.Empty).Trim(),
+            StringComparison.Ordinal);
 
     private async Task SubmitAsync()
     {
         if (busy)
         {
+            return;
+        }
+
+        if (!IsAccountResolved)
+        {
+            success = false;
+            accountLookupError = "Không tìm thấy tài khoản.";
             return;
         }
 
@@ -92,6 +130,7 @@
 
             idempotencyIntent.Complete();
             model = new FormModel();
+            ResetAccountResolution();
             success = true;
             message = $"Nộp tiền thành công. Mã giao dịch: {response?.ReferenceNo}";
         }
@@ -107,12 +146,62 @@
         }
     }
 
+    private void ResetAccountResolution()
+    {
+        Interlocked.Increment(ref accountLookupVersion);
+        resolvedAccount = null;
+        accountLookupError = null;
+        resolvingAccount = false;
+    }
+
+    private async Task ResolveAccountAsync()
+    {
+        var accountNumber = (model.Account ?? string.Empty).Trim();
+        var lookupVersion = Interlocked.Increment(ref accountLookupVersion);
+        resolvedAccount = null;
+        accountLookupError = null;
+        resolvingAccount = false;
+
+        if (!IsAccountNumber(accountNumber))
+        {
+            accountLookupError = "Không tìm thấy tài khoản.";
+            return;
+        }
+
+        resolvingAccount = true;
+        try
+        {
+            var result = await Session.ResolveAccountAsync(accountNumber);
+            if (lookupVersion != accountLookupVersion) return;
+
+            if (result is null)
+            {
+                accountLookupError = "Không tìm thấy tài khoản.";
+                return;
+            }
+
+            resolvedAccount = result;
+        }
+        catch (Exception exception)
+        {
+            if (lookupVersion == accountLookupVersion)
+                accountLookupError = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            if (lookupVersion == accountLookupVersion)
+                resolvingAccount = false;
+        }
+    }
+
+    private static bool IsAccountNumber(string value) =>
+        value.Length == 10 && value.All(char.IsAsciiDigit);
+
     private sealed record DepositIntent(string AccountNumber, decimal Amount, string Description);
 
     private sealed class FormModel : IValidatableObject
     {
         [Required(ErrorMessage = "Vui lòng nhập số tài khoản nhận.")]
-        [RegularExpression("^[0-9]{10}$", ErrorMessage = "Số tài khoản phải gồm đúng 10 chữ số.")]
         public string Account { get; set; } = string.Empty;
 
         public decimal Amount { get; set; }

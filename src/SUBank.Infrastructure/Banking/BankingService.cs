@@ -55,7 +55,7 @@ public sealed class BankingService(
         BankingRules.ValidateAccountNumber(accountNumber, "Số tài khoản");
         return await dbContext.BankAccounts.AsNoTracking()
             .Where(x => x.AccountNumber == accountNumber)
-            .Select(x => new ResolvedAccount(x.AccountNumber, MaskName(x.CustomerProfile.FullName), x.Status.ToString()))
+            .Select(x => new ResolvedAccount(x.AccountNumber, x.CustomerProfile.FullName, x.Status.ToString()))
             .SingleOrDefaultAsync(cancellationToken);
     }
 
@@ -260,12 +260,6 @@ public sealed class BankingService(
             transaction.DestinationAccount.AccountNumber,
             transaction.CreatedAtUtc,
             replayed);
-    }
-
-    private static string MaskName(string fullName)
-    {
-        var parts = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return string.Join(' ', parts.Select(x => x.Length < 2 ? x : $"{x[0]}{new string('*', x.Length - 1)}"));
     }
 
     private sealed class TransactionPasswordRejectedException()

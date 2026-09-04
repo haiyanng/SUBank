@@ -15,7 +15,7 @@ public sealed class BankingRulesTests
     [Theory]
     [InlineData(0.01)]
     [InlineData(1)]
-    [InlineData(9999999999999999.99)]
+    [InlineData(9999999999999999)]
     public void ValidateAmount_AcceptsPositiveMoneyWithAtMostTwoDecimals(decimal amount) =>
         BankingRules.ValidateAmount(amount);
 

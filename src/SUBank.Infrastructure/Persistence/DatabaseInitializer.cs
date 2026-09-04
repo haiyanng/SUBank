@@ -22,18 +22,33 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
 
         var customerA = await EnsureUserAsync("0900000001", "Customer", true, "customer.a", cancellationToken);
         var customerB = await EnsureUserAsync("0900000002", "Customer", true, "customer.b", cancellationToken);
+        var customerC = await EnsureUserAsync("0900000003", "Customer", true, cancellationToken: cancellationToken);
+        var customerD = await EnsureUserAsync("0900000004", "Customer", true, cancellationToken: cancellationToken);
+        var customerE = await EnsureUserAsync("0900000005", "Customer", true, cancellationToken: cancellationToken);
         await EnsureUserAsync("teller", "Teller", false);
         await EnsureUserAsync("admin", "Admin", false);
         var customerAProfile = await EnsureCustomerAsync(customerA, "Nguyễn An", new DateOnly(1998, 5, 10), "001098000001",
-            "0900000001", "customer.a@subank.demo", "Hà Nội", "0900000001", "1000000001", 100_000_000m, cancellationToken);
+            "0900000001", "annguyen@subank.demo", "Hà Nội", "0900000001", "1000000001", 100_000_000m, cancellationToken);
         var customerBProfile = await EnsureCustomerAsync(customerB, "Trần Bình", new DateOnly(1999, 8, 15), "001099000002",
-            "0900000002", "customer.b@subank.demo", "TP. Hồ Chí Minh", "0900000002", "1000000002", 50_000_000m, cancellationToken);
+            "0900000002", "binhtran@subank.demo", "TP. Hồ Chí Minh", "0900000002", "1000000002", 50_000_000m, cancellationToken);
+        var customerCProfile = await EnsureCustomerAsync(customerC, "Lê Minh Châu", new DateOnly(2000, 3, 20), "001200000003",
+            "0900000003", "chaule@subank.demo", "Đà Nẵng", "3000000001", "0900000003", 80_000_000m, cancellationToken);
+        var customerDProfile = await EnsureCustomerAsync(customerD, "Phạm Gia Huy", new DateOnly(1997, 11, 8), "001097000004",
+            "0900000004", "huypham@subank.demo", "Hải Phòng", "4000000001", "0900000004", 60_000_000m, cancellationToken);
+        var customerEProfile = await EnsureCustomerAsync(customerE, "Đỗ Khánh Linh", new DateOnly(2001, 6, 25), "001201000005",
+            "0900000005", "linhdo@subank.demo", "Cần Thơ", "5000000001", "0900000005", 40_000_000m, cancellationToken);
         await EnsureAccountAsync(customerAProfile, "1000000003", 20_000_000m, cancellationToken);
         await EnsureAccountAsync(customerAProfile, "1234567890", 15_000_000m, cancellationToken);
         await EnsureAccountAsync(customerAProfile, "1234567891", 5_000_000m, cancellationToken);
         await EnsureAccountAsync(customerBProfile, "1000000004", 10_000_000m, cancellationToken);
         await EnsureAccountAsync(customerBProfile, "2234567890", 15_000_000m, cancellationToken);
         await EnsureAccountAsync(customerBProfile, "2234567891", 5_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerCProfile, "3000000002", 20_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerCProfile, "3000000003", 10_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerDProfile, "4000000002", 15_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerDProfile, "4000000003", 5_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerEProfile, "5000000002", 10_000_000m, cancellationToken);
+        await EnsureAccountAsync(customerEProfile, "5000000003", 5_000_000m, cancellationToken);
     }
 
     private async Task<ApplicationUser> EnsureUserAsync(string userName, string role, bool transactionPassword,
@@ -108,6 +123,12 @@ public sealed class DatabaseInitializer(SUBankDbContext dbContext, RoleManager<I
                 CreatedAtUtc = DateTimeOffset.UtcNow
             };
             dbContext.CustomerProfiles.Add(profile);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        else if (!string.Equals(profile.Email, email, StringComparison.OrdinalIgnoreCase))
+        {
+            profile.Email = email;
+            profile.UpdatedAtUtc = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 

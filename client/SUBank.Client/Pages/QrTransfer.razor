@@ -41,7 +41,7 @@
         <InputFile id="qr-camera-input" class="visually-hidden" disabled="@busy"
                    OnChange="UploadAsync" accept="image/*" capture="environment" />
 
-        <label for="qr-image-input" class="btn btn-outline-primary @(busy ? "disabled" : null)"
+        <label for="qr-image-input" class="btn btn-primary @(busy ? "disabled" : null)"
                role="button" aria-disabled="@busy">Tải ảnh</label>
         <InputFile id="qr-image-input" class="visually-hidden" disabled="@busy"
                    OnChange="UploadAsync" accept="image/png,image/jpeg,image/webp" />

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SUBank.Contracts.Accounts;
 using SUBank.Contracts.Auth;
 using SUBank.Contracts.Qr;
 using SUBank.Contracts.Realtime;
@@ -46,6 +47,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
             BaseAddress = new Uri("https://localhost")
         });
         var login = await LoginAsync(client, "0900000001");
+        client.DefaultRequestHeaders.Add(AuthProtocol.SessionIdHeader, login.SessionId);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.AccessToken);
         var me = await client.GetFromJsonAsync<UserSummary>("/api/auth/me");
         Assert.Equal("0900000001", me!.UserName);
@@ -54,7 +56,10 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         client.DefaultRequestHeaders.Authorization = null;
         var refresh = await PostCookieProtectedAsync(client, "/api/auth/refresh");
         Assert.Equal(HttpStatusCode.OK, refresh.StatusCode);
-        Assert.NotEqual(login.AccessToken, (await refresh.Content.ReadFromJsonAsync<AuthResponse>())!.AccessToken);
+        var refreshedSession = (await refresh.Content.ReadFromJsonAsync<AuthResponse>())!;
+        Assert.NotEqual(login.AccessToken, refreshedSession.AccessToken);
+        client.DefaultRequestHeaders.Remove(AuthProtocol.SessionIdHeader);
+        client.DefaultRequestHeaders.Add(AuthProtocol.SessionIdHeader, refreshedSession.SessionId);
         Assert.Equal(HttpStatusCode.NoContent, (await PostCookieProtectedAsync(client, "/api/auth/logout")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await PostCookieProtectedAsync(client, "/api/auth/refresh")).StatusCode);
     }
@@ -134,6 +139,30 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         Assert.Equal(HttpStatusCode.NotFound, (await customer.GetAsync($"/api/accounts/{AccountB}/transactions")).StatusCode);
         using var admin = await CreateAuthorizedClientAsync("admin");
         Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync("/api/admin/audit-logs")).StatusCode);
+    }
+
+    [Fact]
+    public async Task AccountResolution_ReturnsFullRecipientNameForCustomerAndTeller()
+    {
+        using var customer = await CreateAuthorizedClientAsync("0900000001");
+        using var customerResponse = await customer.GetAsync($"/api/accounts/resolve/{AccountB}");
+        customerResponse.EnsureSuccessStatusCode();
+        var customerResult = (await customerResponse.Content.ReadFromJsonAsync<ResolvedAccount>())!;
+        Assert.Equal(AccountB, customerResult.AccountNumber);
+        Assert.Equal("Trần Bình", customerResult.DisplayName);
+
+        using var teller = await CreateAuthorizedClientAsync("teller");
+        using var tellerResponse = await teller.GetAsync($"/api/accounts/resolve/{AccountB}");
+        tellerResponse.EnsureSuccessStatusCode();
+        Assert.Equal("Trần Bình", (await tellerResponse.Content.ReadFromJsonAsync<ResolvedAccount>())!.DisplayName);
+    }
+
+    [Fact]
+    public async Task AccountResolution_ReturnsNotFoundForUnknownAccount()
+    {
+        using var customer = await CreateAuthorizedClientAsync("0900000001");
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await customer.GetAsync("/api/accounts/resolve/9999999999")).StatusCode);
     }
 
     [Fact]

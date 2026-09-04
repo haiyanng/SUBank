@@ -255,6 +255,21 @@ public sealed class ApiSession(
         return result;
     }
 
+    public async Task<ResolvedAccount?> ResolveAccountAsync(string accountNumber)
+    {
+        var normalizedAccountNumber = accountNumber.Trim();
+        using var response = await SendAuthorizedAsync(() => Authorized(
+            HttpMethod.Get,
+            $"api/accounts/resolve/{Uri.EscapeDataString(normalizedAccountNumber)}"));
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, redirectOnUnauthorized: false);
+        return await response.Content.ReadFromJsonAsync<ResolvedAccount>();
+    }
+
     public async Task<CashDepositResponse?> DepositAsync(CashDepositRequest model, string idempotencyKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);

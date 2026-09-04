@@ -11,7 +11,7 @@
         <h1 class="mb-1">Giao dịch gần đây</h1>
         <p>Tìm nhanh và xem chi tiết giao dịch theo từng tài khoản.</p>
     </div>
-    <a class="btn btn-outline-secondary" href="/accounts">Quay lại trang chủ</a>
+    <a class="btn btn-primary" href="/accounts">Quay lại trang chủ</a>
 </div>
 
 @if (accounts is null && loading)
@@ -59,11 +59,11 @@ else if (accounts is not null)
             </div>
 
             <div class="history-filter-tabs" role="group" aria-label="Lọc chiều giao dịch">
-                <button type="button" class="history-filter @(directionFilter == "all" ? "is-active" : null)"
+                <button type="button" class="btn btn-primary @(directionFilter == "all" ? "active" : null)"
                         aria-pressed="@(directionFilter == "all")" @onclick='() => SetDirectionFilter("all")'>Tất cả</button>
-                <button type="button" class="history-filter @(directionFilter == "incoming" ? "is-active" : null)"
+                <button type="button" class="btn btn-primary @(directionFilter == "incoming" ? "active" : null)"
                         aria-pressed="@(directionFilter == "incoming")" @onclick='() => SetDirectionFilter("incoming")'>Tiền vào</button>
-                <button type="button" class="history-filter @(directionFilter == "outgoing" ? "is-active" : null)"
+                <button type="button" class="btn btn-primary @(directionFilter == "outgoing" ? "active" : null)"
                         aria-pressed="@(directionFilter == "outgoing")" @onclick='() => SetDirectionFilter("outgoing")'>Tiền ra</button>
             </div>
         </div>

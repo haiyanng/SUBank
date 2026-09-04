@@ -10,7 +10,7 @@
         <h1 class="mb-1">Chuyển tiền nội bộ</h1>
         <p>Kiểm tra kỹ người nhận và số tiền trước khi xác nhận.</p>
     </div>
-    <a class="btn btn-outline-secondary" href="qr">Quét QR</a>
+    <a class="btn btn-primary" href="qr">Quét QR</a>
 </div>
 
 @if (loadingAccounts)
@@ -42,7 +42,8 @@ else
 
                         <div class="mb-3">
                             <label class="form-label" for="source">Tài khoản nguồn</label>
-                            <InputSelect @key="accountListVersion" id="source" class="form-select" @bind-Value="model.Source">
+                            <InputSelect @key="accountListVersion" id="source" class="form-select"
+                                         @bind-Value="model.Source" @bind-Value:after="SourceChanged">
                                 @foreach (var account in accounts)
                                 {
                                     <option value="@account.AccountNumber">@account.AccountNumber - @account.Balance.ToString("N2") VND</option>
@@ -54,14 +55,34 @@ else
                         <div class="mb-3">
                             <label class="form-label" for="destination">Tài khoản nhận</label>
                             <InputText id="destination" inputmode="numeric" maxlength="10" autocomplete="off"
-                                       class="form-control" @bind-Value="model.Destination" />
+                                       class="form-control" @bind-Value="model.Destination"
+                                       @bind-Value:after="ResetDestinationResolution"
+                                       @onblur="ResolveDestinationAsync" />
                             <ValidationMessage For="@(() => model.Destination)" />
+                            @if (resolvingDestination)
+                            {
+                                <div class="form-text" role="status">Đang kiểm tra tài khoản...</div>
+                            }
+                            else if (destinationLookupError is not null)
+                            {
+                                <div class="text-danger mt-1" role="alert">@destinationLookupError</div>
+                            }
                         </div>
+
+                        @if (IsDestinationResolved)
+                        {
+                            <div class="mb-3">
+                                <label class="form-label" for="destination-name">Tên người nhận</label>
+                                <input id="destination-name" class="form-control"
+                                       value="@resolvedDestination!.DisplayName" readonly />
+                            </div>
+                        }
 
                         <div class="mb-3">
                             <label class="form-label" for="amount">Số tiền (VND)</label>
                             <InputNumber id="amount" class="form-control form-control-lg money"
                                          min="0.01" max="9999999999999999.99" step="0.01"
+                                         ParsingErrorMessage="Vui lòng điền số tiền."
                                          @bind-Value="model.Amount" />
                             <ValidationMessage For="@(() => model.Amount)" />
                         </div>
@@ -86,7 +107,8 @@ else
                             <div class="alert @(success ? "alert-success" : "alert-danger")" role="alert">@message</div>
                         }
 
-                        <button class="btn btn-primary btn-lg w-100" disabled="@busy">
+                        <button class="btn btn-primary btn-lg w-100"
+                                disabled="@(busy || resolvingDestination || !IsDestinationResolved)">
                             @(busy ? "Đang xử lý..." : "Xác nhận chuyển tiền")
                         </button>
                     </EditForm>
@@ -126,11 +148,21 @@ else
     private readonly FormModel model = new();
     private readonly IdempotencyIntentTracker<TransferIntent> idempotencyIntent = new();
     private string? accountLoadError;
+    private ResolvedAccount? resolvedDestination;
+    private string? destinationLookupError;
     private string? message;
     private bool loadingAccounts = true;
+    private bool resolvingDestination;
     private bool success;
     private bool busy;
     private long accountListVersion;
+    private long destinationLookupVersion;
+    private bool IsDestinationResolved =>
+        resolvedDestination is not null &&
+        string.Equals(
+            resolvedDestination.AccountNumber,
+            (model.Destination ?? string.Empty).Trim(),
+            StringComparison.Ordinal);
 
     protected override Task OnInitializedAsync() => LoadAccountsAsync();
 
@@ -176,6 +208,13 @@ else
     {
         if (busy) return;
 
+        if (!IsDestinationResolved)
+        {
+            success = false;
+            destinationLookupError = "Không tìm thấy tài khoản.";
+            return;
+        }
+
         busy = true;
         message = null;
 
@@ -192,6 +231,7 @@ else
             model.Destination = string.Empty;
             model.Amount = 0;
             model.Description = null;
+            ResetDestinationResolution();
             success = true;
             message = $"Chuyển tiền thành công. Mã giao dịch: {result?.ReferenceNo}";
 
@@ -216,6 +256,79 @@ else
         }
     }
 
+    private void ResetDestinationResolution()
+    {
+        Interlocked.Increment(ref destinationLookupVersion);
+        resolvedDestination = null;
+        destinationLookupError = null;
+        resolvingDestination = false;
+    }
+
+    private async Task ResolveDestinationAsync()
+    {
+        var accountNumber = (model.Destination ?? string.Empty).Trim();
+        var lookupVersion = Interlocked.Increment(ref destinationLookupVersion);
+        resolvedDestination = null;
+        destinationLookupError = null;
+        resolvingDestination = false;
+
+        if (!IsAccountNumber(accountNumber))
+        {
+            destinationLookupError = "Không tìm thấy tài khoản.";
+            return;
+        }
+
+        if (string.Equals(accountNumber, model.Source?.Trim(), StringComparison.Ordinal))
+        {
+            destinationLookupError = "Tài khoản nhận phải khác tài khoản nguồn.";
+            return;
+        }
+
+        resolvingDestination = true;
+        try
+        {
+            var result = await Session.ResolveAccountAsync(accountNumber);
+            if (lookupVersion != destinationLookupVersion) return;
+
+            if (result is null)
+            {
+                destinationLookupError = "Không tìm thấy tài khoản.";
+                return;
+            }
+
+            resolvedDestination = result;
+        }
+        catch (Exception exception)
+        {
+            if (lookupVersion == destinationLookupVersion)
+                destinationLookupError = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            if (lookupVersion == destinationLookupVersion)
+                resolvingDestination = false;
+        }
+    }
+
+    private static bool IsAccountNumber(string value) =>
+        value.Length == 10 && value.All(char.IsAsciiDigit);
+
+    private void SourceChanged()
+    {
+        if (!string.Equals(
+                (model.Destination ?? string.Empty).Trim(),
+                (model.Source ?? string.Empty).Trim(),
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref destinationLookupVersion);
+        resolvedDestination = null;
+        resolvingDestination = false;
+        destinationLookupError = "Tài khoản nhận phải khác tài khoản nguồn.";
+    }
+
     private sealed record TransferIntent(
         string SourceAccountNumber,
         string DestinationAccountNumber,
@@ -229,7 +342,6 @@ else
         public string Source { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "Vui lòng nhập tài khoản nhận.")]
-        [RegularExpression("^[0-9]{10}$", ErrorMessage = "Tài khoản nhận phải gồm đúng 10 chữ số.")]
         public string Destination { get; set; } = string.Empty;
 
         public decimal Amount { get; set; }
@@ -255,7 +367,7 @@ else
             if (!string.IsNullOrWhiteSpace(Source) &&
                 string.Equals(Source, Destination, StringComparison.Ordinal))
                 yield return new ValidationResult(
-                    "Tài khoản nguồn và tài khoản nhận phải khác nhau.",
+                    "Tài khoản nhận phải khác tài khoản nguồn.",
                     [nameof(Destination)]);
         }
     }

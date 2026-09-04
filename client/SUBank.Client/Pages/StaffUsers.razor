@@ -52,11 +52,11 @@ else
             </form>
 
             <div class="history-filter-tabs" role="group" aria-label="Lọc trạng thái Customer">
-                <button type="button" class="history-filter @(filter == CustomerFilter.All ? "is-active" : null)"
+                <button type="button" class="btn btn-primary @(filter == CustomerFilter.All ? "active" : null)"
                         aria-pressed="@(filter == CustomerFilter.All)" @onclick="() => SetFilter(CustomerFilter.All)">Tất cả</button>
-                <button type="button" class="history-filter @(filter == CustomerFilter.Active ? "is-active" : null)"
+                <button type="button" class="btn btn-primary @(filter == CustomerFilter.Active ? "active" : null)"
                         aria-pressed="@(filter == CustomerFilter.Active)" @onclick="() => SetFilter(CustomerFilter.Active)">Hoạt động</button>
-                <button type="button" class="history-filter @(filter == CustomerFilter.Locked ? "is-active" : null)"
+                <button type="button" class="btn btn-primary @(filter == CustomerFilter.Locked ? "active" : null)"
                         aria-pressed="@(filter == CustomerFilter.Locked)" @onclick="() => SetFilter(CustomerFilter.Locked)">Bị khóa</button>
             </div>
         </div>

@@ -1,76 +1,193 @@
-# SUBank V2
+# SUBank 3S
 
-Đây là SUBank V2.4, ứng dụng ngân hàng mô phỏng dạng modular monolith xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity. Repository hiện đã vượt phạm vi scaffold P0 và đang hoàn thiện các feature P1.
+SUBank 3S là ứng dụng **Online Banking** được xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity.
+
+## Tech Stack
+
+* Backend: ASP.NET Core 10 Web API
+* Frontend: Blazor WebAssembly + Bootstrap
+* Database: SQL Server + Entity Framework Core
+* Authentication: ASP.NET Core Identity + JWT
+* Cache & Session: Redis
+* Realtime: SignalR
+* API Documentation: Swagger
 
 ## Yêu cầu môi trường
 
-- .NET SDK 10
-- SQL Server local có hỗ trợ Windows Authentication
-- Redis tại `localhost:6379` để login, protected API và realtime session hoạt động trong Development
-- Development HTTPS certificate (`dotnet dev-certs https --trust` nếu máy chưa tin cậy)
+* .NET SDK 10
+* SQL Server hỗ trợ Windows Authentication
+* Redis tại `localhost:6379`
+* Development HTTPS certificate
 
-Database Development là `SUBankV2`. API tự áp dụng migration và tạo dữ liệu demo khi khởi động trong môi trường Development.
-
-Để dựng lại database Development sạch (lệnh đầu tiên xóa toàn bộ dữ liệu trong đúng database `SUBankV2`):
+Nếu máy chưa trust HTTPS certificate:
 
 ```powershell
-dotnet ef database drop --force --project src/SUBank.Infrastructure --startup-project src/SUBank.Api
-dotnet ef database update --project src/SUBank.Infrastructure --startup-project src/SUBank.Api
-dotnet run --project src/SUBank.Api --launch-profile https
+dotnet dev-certs https --trust
 ```
 
-Lần khởi động cuối tạo lại role, bốn user, hai CustomerProfile và tám tài khoản demo. Không chạy quy trình xóa database với connection string production.
+Database Development mặc định là `SUBankV2`.
 
-## Chạy trên máy local
+API tự động áp dụng migration và tạo dữ liệu demo khi khởi động trong môi trường Development.
+
+## Chạy project
+
+### 1. Restore và build
 
 ```powershell
 dotnet restore
 dotnet build SUBank.sln
 dotnet test SUBank.sln --no-build
+```
+
+### 2. Chạy API
+
+```powershell
 dotnet run --project src/SUBank.Api --launch-profile https
+```
+
+API:
+
+`https://localhost:7247`
+
+Swagger:
+
+`https://localhost:7247/swagger`
+
+### 3. Chạy Blazor Client
+
+Mở terminal khác:
+
+```powershell
 dotnet run --project client/SUBank.Client --launch-profile https
 ```
 
-API chạy ở `https://localhost:7247`. `/health/live` kiểm tra tiến trình; `/health/ready` và `/health` kiểm tra SQL Server cùng Redis. Swagger có tại `/swagger`. Client Development chạy tách port ở `https://localhost:7081`.
+Client:
 
-Hai project Development chỉ cung cấp launch profile `https`; profile HTTP cũ đã bỏ vì không tương thích với refresh cookie `Secure` và exact-origin CORS.
+`https://localhost:7081`
 
-Khi publish API, target MSBuild tự restore/publish Blazor Client và chép asset vào cùng artifact để demo/Production chạy cùng origin. Cấu hình host, TLS, proxy, migration và checklist smoke test nằm trong [Deployment.md](docs/Deployment.md). Quy trình backup, export dữ liệu trước migration và restore drill nằm trong [Backup-Restore-Runbook.md](docs/Backup-Restore-Runbook.md).
+## Reset database Development
+
+> Lệnh dưới đây sẽ xóa toàn bộ dữ liệu trong database `SUBankV2`.
+
+```powershell
+dotnet ef database drop --force --project src/SUBank.Infrastructure --startup-project src/SUBank.Api
+
+dotnet ef database update --project src/SUBank.Infrastructure --startup-project src/SUBank.Api
+
+dotnet run --project src/SUBank.Api --launch-profile https
+```
+
+Sau khi seed, hệ thống có:
+
+* 5 Customer
+* 1 Teller
+* 1 Admin
+* 5 Customer Profile
+* 17 tài khoản ngân hàng demo
+
+## Tài khoản demo
+
+| Username     | Role     | Password     | Transaction Password |
+| ------------ | -------- | ------------ | -------------------- |
+| `0900000001` | Customer | `Demo@12345` | `123456`             |
+| `0900000002` | Customer | `Demo@12345` | `123456`             |
+| `0900000003` | Customer | `Demo@12345` | `123456`             |
+| `0900000004` | Customer | `Demo@12345` | `123456`             |
+| `0900000005` | Customer | `Demo@12345` | `123456`             |
+| `teller`     | Teller   | `Demo@12345` | —                    |
+| `admin`      | Admin    | `Demo@12345` | —                    |
+
+### Tài khoản ngân hàng demo
+
+* Customer `0900000001`: `0900000001`, `1000000003`, `1234567890`, `1234567891`
+* Customer `0900000002`: `0900000002`, `1000000004`, `2234567890`, `2234567891`
+* Customer `0900000003`: `3000000001`, `3000000002`, `3000000003`
+* Customer `0900000004`: `4000000001`, `4000000002`, `4000000003`
+* Customer `0900000005`: `5000000001`, `5000000002`, `5000000003`
+
+Dữ liệu trên chỉ phục vụ Development/Demo.
+
+## Chức năng chính
+
+### Customer
+
+* Đăng nhập và quản lý phiên
+* Xem danh sách tài khoản và số dư
+* Xem lịch sử giao dịch
+* Chuyển tiền nội bộ
+* Chuyển tiền bằng SUBank QR
+* Xem hồ sơ cá nhân
+* Xem thông báo realtime
+* Xem sao kê tháng/năm
+* Xuất sao kê PDF
+
+### Teller
+
+* Đăng nhập với quyền Teller
+* Tìm kiếm và xem thông tin khách hàng
+* Thực hiện Cash Deposit
+
+### Admin
+
+* Quản lý Customer
+* Tìm kiếm và xem chi tiết Customer
+* Khóa/mở khóa Customer
+* Thu hồi phiên của Customer khi bị khóa
+* Xem Audit Log
+
+## Authentication & Security
+
+Hệ thống sử dụng:
+
+* ASP.NET Core Identity
+* JWT Access Token
+* HttpOnly Refresh Token
+* Identity Lockout
+* Role-based Authorization
+* Redis Active Session Control
+* Single Active Session
+* Audit Log
+
+Customer bị khóa bởi Admin sẽ không thể tiếp tục sử dụng protected API và phiên đang hoạt động sẽ bị thu hồi.
 
 ## Application Log
 
-API ghi log có cấu trúc dạng JSON Lines ra console. Trong Development, rolling file được bật tại `src/SUBank.Api/logs/subank-api-YYYYMMDD.log`; file log bị Git bỏ qua và không được commit. Có thể theo dõi bằng:
+Trong Development, API ghi log tại:
+
+```text
+src/SUBank.Api/logs/subank-api-YYYYMMDD.log
+```
+
+Theo dõi log bằng:
 
 ```powershell
 Get-Content -Encoding UTF8 src/SUBank.Api/logs/subank-api-*.log -Wait
 ```
 
-Request log chỉ dùng route template, status, thời gian xử lý và correlation ID; không thu raw URL/query/body/token/mật khẩu. Cấu hình gốc dùng cho production tắt file sink để ưu tiên stdout của nền tảng hosting. Xem phạm vi, retention và giới hạn backup tại [Application-Logging.md](docs/Application-Logging.md).
+## Health Check
 
-## Tài khoản demo Development
+```text
+/health/live
+/health/ready
+/health
+```
 
-| Tên đăng nhập | Role | Mật khẩu đăng nhập | Mật khẩu giao dịch |
-|---|---|---|---|
-| `0900000001` | Customer | `Demo@12345` | `123456` |
-| `0900000002` | Customer | `Demo@12345` | `123456` |
-| `teller` | Teller | `Demo@12345` | Không có |
-| `admin` | Admin | `Demo@12345` | Không có |
+Health check được sử dụng để kiểm tra trạng thái API, SQL Server và Redis.
 
-Tài khoản ngân hàng demo:
+## Documentation
 
-- Customer `0900000001`: tài khoản chính `0900000001`; tài khoản phụ `1000000003`, `1234567890`, `1234567891`.
-- Customer `0900000002`: tài khoản chính `0900000002`; tài khoản phụ `1000000004`, `2234567890`, `2234567891`.
+Tài liệu chi tiết nằm trong thư mục `docs/`:
 
-Với Customer demo, số điện thoại và tên đăng nhập là cùng một giá trị. Teller và Admin tiếp tục dùng username nghiệp vụ. Seed Development tự đổi username `customer.a`/`customer.b` và số tài khoản chính cũ tại chỗ để giữ nguyên ID, số dư và lịch sử giao dịch; bản ghi Identity legacy trùng nhưng không có hồ sơ, giao dịch hoặc audit sẽ được xóa an toàn. Ứng dụng không cung cấp API xóa Customer thật; Customer có hồ sơ chỉ được khóa hoặc mở khóa bởi Admin.
+* `PROJECT-BLUEPRINT.md` — kiến trúc và phạm vi project
+* `Deployment.md` — hướng dẫn deployment
+* `Backup-Restore-Runbook.md` — backup và restore database
+* `Application-Logging.md` — logging
+* `Issue-Register.md` — lỗi và các phát hiện kỹ thuật
 
-Phiên và access token Customer hết hạn tuyệt đối sau 15 phút từ lúc đăng nhập. Tab foreground tự trở về login; tab bị browser suspend kiểm tra lại ngay khi visible/focus/pageshow. Reload chỉ khôi phục phần thời gian còn lại và server vẫn từ chối protected API sau deadline. Teller/Admin dùng access token 15 phút, refresh theo nhu cầu và logical session tối đa bảy ngày.
+## Ghi chú
 
-Access token không được lưu persistent và refresh token chỉ nằm trong HttpOnly cookie. Browser chỉ giữ `SessionId`/logout intent không phải credential. Mỗi tab bind đúng session; login nơi khác thay session cũ. Login, refresh và logout được serialize xuyên tab bằng Web Lock giữ xuyên suốt request để tránh response cookie cũ ghi đè cookie mới. Phạm vi demo hỗ trợ Chrome/Edge hiện đại và fail closed nếu Web Locks, `sessionStorage` hoặc `localStorage` không khả dụng. Client kiểm tra tối thiểu response login ngay trong Web Lock; response không đọc được, sai cấu trúc hoặc lệch `SessionId` sẽ bị chặn và thu hồi bù trước khi nhả khóa. Logout khóa UI ngay; nếu cả cookie logout lẫn bearer fallback đều không xác nhận thu hồi, trang login hiển thị trạng thái `logout-unconfirmed`.
-
-Các secret trên chỉ là dữ liệu demo. Production phải cấp `ConnectionStrings__DefaultConnection`, `Jwt__SigningKey` và `ActiveSession__RedisConnection` từ secret store; cấu hình mặc định cố ý để trống nhằm fail-fast.
-
-## Phạm vi
-
-P0 đã có authentication/authorization, Identity lockout 15 phút, quản lý Customer có tìm kiếm/xem chi tiết/khóa thủ công với lý do và Audit Log, tài khoản/lịch sử, chuyển tiền nội bộ, Teller cash deposit, migration/seed và audit cơ bản. Admin suspension độc lập với Identity lockout, thu hồi phiên đang hoạt động và không cho xóa Customer. P1 đã có active-session control, SignalR notification, hồ sơ khách hàng chỉ đọc, sao kê tháng/năm kèm PDF server và SUBank QR nội bộ; AI chưa triển khai. QR hỗ trợ tạo ảnh, quét camera hoặc upload PNG/JPEG/WebP rồi điền trước form chuyển tiền; camera trên trình duyệt yêu cầu HTTPS. Xem [PROJECT-BLUEPRINT.md](docs/PROJECT-BLUEPRINT.md) và [Nhật ký lỗi/phát hiện kỹ thuật](docs/Issue-Register.md).
-
-Giao diện dùng Bootstrap và visual system riêng của SUBank, hỗ trợ responsive từ 320px, trạng thái loading/error/empty và điều hướng theo Customer/Teller/Admin. Figma vẫn `PENDING` cho đến khi giao diện chạy thật được chủ dự án duyệt.
+* Project hiện không hỗ trợ Customer tự đăng ký tài khoản.
+* Customer demo được tạo bằng Development Seed Data.
+* Trong hệ thống ngân hàng thực tế, việc tạo Customer thuộc quy trình onboarding/KYC.
+* AI/Fraud Detection hiện chưa được triển khai.
+* Secret production không được lưu trực tiếp trong source code.

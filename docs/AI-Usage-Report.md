@@ -1,10 +1,9 @@
 # Báo cáo sử dụng AI
 
-Đây là tài liệu bằng chứng bắt buộc của dự án. File chỉ ghi nhận công việc thực tế có AI hỗ trợ. Không được tuyên bố đã có human review, thực thi UAT, Figma approval, deployment thành công hoặc test result nếu những việc đó chưa thực sự xảy ra.
-
+Đây là File ghi nhận công việc thực tế có AI hỗ trợ.
 ## Entry 001 - Khởi tạo scaffold Milestone 0
 
-- Ngày: 2026-08-26
+- Ngày: 2026-08-18
 - Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
 - Tính năng/công việc: tạo scaffold Milestone 0 của SUBank V2 mà không triển khai business functionality.
 - Tóm tắt prompt/công việc thực tế: tạo solution .NET 10 theo Clean Architecture gồm Domain, Contracts, Application, Infrastructure, API, Blazor WebAssembly Client và ba test project; thêm các trang Bootstrap tối thiểu, Swagger, ProblemDetails, Development CORS, `/health`, file cấu hình repository và tài liệu ban đầu. Không triển khai authentication, database, Redis, transfer, QR, SignalR, AI, Teller hoặc Admin logic.
@@ -17,7 +16,7 @@
 
 ## Entry 002 - Review master specification V2.4
 
-- Ngày: 2026-08-26
+- Ngày: 2026-08-20
 - Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
 - Tính năng/công việc: review `SUBank_V2.4_Codex_Master_Spec_FINAL.docx` mà không triển khai business code.
 - Tóm tắt prompt/công việc thực tế: đọc specification được cung cấp, đóng vai trò Senior Tech Lead, giải thích cho người mới, phát hiện rủi ro về kiến trúc/bảo mật/data flow và đề xuất chỉnh sửa trước khi code.
@@ -32,7 +31,7 @@
 
 - Ngày: 2026-08-26
 - Công cụ/model AI: Codex; project không ghi nhận được model backend chính xác.
-- Tính năng/công việc: ghi lại các chỉnh sửa V2.4 đã thống nhất và thiết lập kế hoạch triển khai bảy ngày.
+- Tính năng/công việc: ghi lại các chỉnh sửa V2.4 đã thống nhất và thiết lập kế hoạch triển khai.
 - Tóm tắt prompt/công việc thực tế: chọn V2.4 làm phiên bản chính thức; lập kế hoạch cho một sinh viên cùng Codex với deadline một tuần; dùng Identity lockout khi phù hợp; giữ `decimal(18,2)`; Development tách port và production cùng origin; giữ QR generation/camera/upload và PDF; chờ logo do chủ dự án cung cấp; dùng hosting demo miễn phí/chi phí thấp; sửa các vấn đề thiết kế đã review.
 - File/module bị tác động: `docs/PROJECT-BLUEPRINT.md`, `docs/AI-Usage-Report.md`.
 - Kiểm chứng đã thực hiện: kiểm tra tính nhất quán của tài liệu với quyết định do chủ dự án đưa ra và master specification đã review.

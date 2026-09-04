@@ -30,28 +30,34 @@ public sealed class SUBankWebApplicationFactory : WebApplicationFactory<Program>
     }
 }
 
-public sealed class TestRealtimeNotifier(SignalRRealtimeNotifier inner) : IRealtimeNotifier
+public sealed class TestRealtimeNotifier(IServiceScopeFactory scopeFactory) : IRealtimeNotifier
 {
     public ConcurrentQueue<string> ForcedSessions { get; } = new();
     public ConcurrentQueue<(string UserId, string AccountNumber)> BalanceChanges { get; } = new();
     public ConcurrentQueue<(string UserId, string ReferenceNo, string AccountNumber)> Transactions { get; } = new();
 
-    public Task ForceLogoutAsync(string sessionId, string reason, CancellationToken cancellationToken)
+    public async Task ForceLogoutAsync(string sessionId, string reason, CancellationToken cancellationToken)
     {
         ForcedSessions.Enqueue(sessionId);
-        return inner.ForceLogoutAsync(sessionId, reason, cancellationToken);
+        using var scope = scopeFactory.CreateScope();
+        var notifier = scope.ServiceProvider.GetRequiredService<SignalRRealtimeNotifier>();
+        await notifier.ForceLogoutAsync(sessionId, reason, cancellationToken);
     }
 
-    public Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken)
+    public async Task BalanceChangedAsync(string userId, string accountNumber, CancellationToken cancellationToken)
     {
         BalanceChanges.Enqueue((userId, accountNumber));
-        return inner.BalanceChangedAsync(userId, accountNumber, cancellationToken);
+        using var scope = scopeFactory.CreateScope();
+        var notifier = scope.ServiceProvider.GetRequiredService<SignalRRealtimeNotifier>();
+        await notifier.BalanceChangedAsync(userId, accountNumber, cancellationToken);
     }
 
-    public Task TransactionReceivedAsync(string userId, string referenceNo, string accountNumber, CancellationToken cancellationToken)
+    public async Task TransactionReceivedAsync(string userId, string referenceNo, string accountNumber, CancellationToken cancellationToken)
     {
         Transactions.Enqueue((userId, referenceNo, accountNumber));
-        return inner.TransactionReceivedAsync(userId, referenceNo, accountNumber, cancellationToken);
+        using var scope = scopeFactory.CreateScope();
+        var notifier = scope.ServiceProvider.GetRequiredService<SignalRRealtimeNotifier>();
+        await notifier.TransactionReceivedAsync(userId, referenceNo, accountNumber, cancellationToken);
     }
 
     public void Clear()

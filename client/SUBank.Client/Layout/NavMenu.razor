@@ -37,6 +37,7 @@
                 <NavLink class="sidebar-link" href="qr" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">⌗</span><span>QR</span></NavLink>
                 <NavLink class="sidebar-link" href="transactions" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◷</span><span>Lịch sử giao dịch</span></NavLink>
                 <NavLink class="sidebar-link" href="statements" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">▤</span><span>Sao kê</span></NavLink>
+                <NavLink class="sidebar-link" href="ai-support" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">✦</span><span>AI hỗ trợ</span></NavLink>
                 <NavLink class="sidebar-link" href="profile" @onclick="CloseMenu"><span class="nav-icon" aria-hidden="true">◎</span><span>Thông tin cá nhân</span></NavLink>
             }
 
@@ -118,7 +119,7 @@
                 : "";
     private string PrimaryRole => Session.Current?.User.Roles.FirstOrDefault() ?? "User";
     private string UserInitial => Session.IsInRole("Customer")
-        ? "KH"
+        ? GetInitials(customerFullName)
         : string.IsNullOrWhiteSpace(Session.Current?.User.UserName)
         ? "S"
         : Session.Current.User.UserName[..1].ToUpperInvariant();
@@ -156,6 +157,17 @@
     private static string MaskPhone(string? value) => value is { Length: 10 }
         ? $"{value[..3]}****{value[^3..]}"
         : "Khách hàng SUBank";
+
+    private static string GetInitials(string? fullName)
+    {
+        var parts = fullName?.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+        return parts.Length switch
+        {
+            0 => string.Empty,
+            1 => parts[0][..1].ToUpperInvariant(),
+            _ => $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant()
+        };
+    }
 
     protected override async Task OnInitializedAsync()
     {
