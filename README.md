@@ -1,6 +1,6 @@
 # SUBank 3S
 
-SUBank 3S là ứng dụng **Online Banking** được xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity.
+SUBank 3S là ứng dụng Online Banking được xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity.
 
 ## Tech Stack
 

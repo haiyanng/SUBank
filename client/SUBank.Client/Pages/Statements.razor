@@ -71,10 +71,10 @@ else
 @if (statement is not null)
 {
     <div class="row g-3 mb-3">
-        <div class="col-md-3"><div class="card"><div class="card-body">Số dư đầu kỳ<br /><strong>@statement.OpeningBalance.ToString("N2")</strong></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi có<br /><strong class="text-success">@statement.TotalCredit.ToString("N2")</strong></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi nợ<br /><strong class="text-danger">@statement.TotalDebit.ToString("N2")</strong></div></div></div>
-        <div class="col-md-3"><div class="card"><div class="card-body">Số dư cuối kỳ<br /><strong>@statement.ClosingBalance.ToString("N2")</strong></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body">Số dư đầu kỳ<br /><strong>@statement.OpeningBalance.ToString("N0")</strong></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi có<br /><strong class="text-success">@statement.TotalCredit.ToString("N0")</strong></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body">Tổng ghi nợ<br /><strong class="text-danger">@statement.TotalDebit.ToString("N0")</strong></div></div></div>
+        <div class="col-md-3"><div class="card"><div class="card-body">Số dư cuối kỳ<br /><strong>@statement.ClosingBalance.ToString("N0")</strong></div></div></div>
     </div>
 
     @if (statement.Transactions.Count == 0)
@@ -95,7 +95,7 @@ else
                                     <td data-label="Thời gian">@item.CreatedAtUtc.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm")</td>
                                     <td data-label="Mã">@item.ReferenceNo</td>
                                     <td data-label="Chiều">@item.Direction</td>
-                                    <td data-label="Số tiền" class="text-md-end money">@item.Amount.ToString("N2") VND</td>
+                                    <td data-label="Số tiền" class="text-md-end money">@item.Amount.ToString("N0") VND</td>
                                 </tr>
                             }
                         </tbody>

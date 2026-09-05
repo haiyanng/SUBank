@@ -1,85 +1,236 @@
 # Thiết kế Application Log
 
-## Mục tiêu và phạm vi
+## Mục tiêu
 
-Application Log hiện áp dụng cho ASP.NET Core API. Mục tiêu là chẩn đoán startup, dependency, exception và vòng đời HTTP request mà không biến log kỹ thuật thành nơi lưu dữ liệu ngân hàng hoặc thông tin xác thực.
+Application Log của SUBank dùng để theo dõi hoạt động kỹ thuật của ASP.NET Core API, bao gồm:
 
-Blazor WebAssembly chạy trong trình duyệt nên không tự động gửi console log của Client về API. Nếu sau này cần thu thập lỗi Client, phải thiết kế một luồng riêng có giới hạn dữ liệu và sự đồng ý phù hợp.
+- request HTTP;
+- lỗi hệ thống;
+- lỗi dependency;
+- thời gian xử lý;
+- startup và runtime của API.
 
-## Ba nguồn dữ liệu khác nhau
+Application Log không dùng để lưu giao dịch ngân hàng và không thay thế `AuditLog` hoặc `FinancialTransaction`.
 
-| Nguồn | Mục đích | Nơi lưu hiện tại |
-|---|---|---|
-| Application/technical log | Chẩn đoán host, dependency, exception và thời gian xử lý request | Console JSON ở mọi môi trường; rolling file trong Development |
-| `AuditLog` | Lịch sử actor, hành động, target và kết quả của sự kiện bảo mật/nghiệp vụ | SQL Server |
-| `FinancialTransaction` | Sự thật đã commit về chuyển động tiền | SQL Server |
+```text
+Application Log
+→ thông tin kỹ thuật
 
-Application Log không thay thế `AuditLog`, và cả hai không thay thế `FinancialTransaction`.
+AuditLog
+→ hành động nghiệp vụ và bảo mật
 
-## Luồng correlation
-
-1. API đọc header `X-Correlation-ID` nếu giá trị dài tối đa 100 ký tự và chỉ gồm chữ, số, dấu `-`, `_`, `.`; nếu không hợp lệ, server sinh GUID mới.
-2. Correlation ID trở thành `HttpContext.TraceIdentifier`, được trả lại trong response header và đi vào logging scope.
-3. ProblemDetails có extension `correlationId` để người dùng gửi mã tra cứu mà không cần gửi dữ liệu nhạy cảm.
-4. EF Core interceptor tự điền cùng mã vào `AuditLog.CorrelationId` khi audit mới được lưu trong HTTP request. Audit từ startup hoặc background không có request context có thể để `null`.
-
-Correlation ID chỉ dùng để liên kết sự kiện, không phải credential và không được dùng để authorization.
-
-## Dữ liệu của một request log
-
-Request completion log chỉ chủ động ghi:
-
-- HTTP method;
-- route template, ví dụ `api/accounts/{accountNumber}`;
-- status code;
-- thời gian xử lý theo mili giây;
-- correlation ID cùng metadata kỹ thuật của logger.
-
-Middleware không đọc hoặc ghi raw URL, route value, query string, request/response body, cookie hay header xác thực. Một enricher loại bỏ thêm các top-level property có tên nhạy cảm như `RequestPath`, `Password`, `AccessToken`, `RefreshToken`, `ConnectionString`, `IdentityCardNumber` và `AccountNumber` trước khi event đi tới sink.
-
-Đây là lớp phòng thủ bổ sung, không phải bộ lọc bí mật tổng quát cho mọi object hoặc nội dung exception. Lập trình viên vẫn không được truyền DTO, body, token, mật khẩu, CCCD, số tài khoản đầy đủ hay connection string vào `ILogger`.
-
-## Mức log
-
-- Request `2xx` và `3xx`: `Information`.
-- Request `4xx`: `Warning`.
-- Request `5xx`: `Error`.
-- `/health` thành công: `Debug`, nên không được ghi khi minimum level là `Information`.
-- Dependency unavailable: exception event ở `Warning`; lỗi hệ thống không dự kiến ở `Error`.
-
-## Console, file và retention
-
-Console và file dùng JSON Lines qua `RenderedCompactJsonFormatter`: mỗi event là một JSON object trên một dòng, không phải một JSON array.
-
-Section `ApplicationLogging` có các cấu hình:
-
-| Khóa | Development hiện tại | Ý nghĩa |
-|---|---:|---|
-| `FileEnabled` | `true` | Bật file sink; cấu hình gốc/production mặc định là `false` |
-| `Directory` | `logs` | Thư mục tương đối, bắt buộc nằm dưới API content root |
-| `FileSizeLimitBytes` | `10485760` | Tối đa 10 MiB cho một file trước khi roll |
-| `RetainedFileCountLimit` | `31` | Giới hạn số file còn giữ |
-| `RetainedDays` | `14` | Giới hạn tuổi file |
-
-File được roll theo ngày và theo dung lượng, có dạng `src/SUBank.Api/logs/subank-api-YYYYMMDD.log`. Khi đồng thời có giới hạn tuổi, số file và dung lượng, file có thể bị xóa sớm hơn 14 ngày nếu chạm ngưỡng khác. Thư mục/file log đã được `.gitignore` loại khỏi Git.
-
-Xem log local bằng PowerShell:
-
-```powershell
-Get-Content -Encoding UTF8 src/SUBank.Api/logs/subank-api-*.log -Wait
-Select-String -Path src/SUBank.Api/logs/subank-api-*.log -Pattern 'mã-correlation-cần-tra'
+FinancialTransaction
+→ giao dịch tiền đã hoàn tất
 ```
 
-## Production và backup
+## Công nghệ
 
-Trong container/demo production, console JSON là đầu ra chính để nền tảng hosting thu thập. File sink mặc định tắt vì filesystem container có thể read-only hoặc mất khi redeploy. Chỉ bật file khi có persistent volume, phân quyền đọc phù hợp và quy trình vận hành rõ ràng.
+API sử dụng Serilog.
 
-Rolling file không phải backup hoặc archive. Repo hiện chưa có lịch backup SQL, nơi lưu bản sao độc lập, script restore hay bằng chứng restore drill. `AuditLog` và `FinancialTransaction` nằm trong SQL cũng chỉ được bảo vệ khi backup database của provider thực sự được cấu hình và kiểm chứng.
+Log được ghi dưới dạng JSON Lines bằng `RenderedCompactJsonFormatter`.
 
-## Kiểm chứng ngày 2026-08-30
+Mỗi log event là một JSON object trên một dòng.
 
-- API tạo rolling file và ghi startup/request event dạng JSON Lines.
-- Response trả `X-Correlation-ID`; ProblemDetails trả cùng `correlationId`.
-- Request tới route có số tài khoản và query thử nghiệm chỉ ghi route template, không ghi route value/query/body vào request completion event.
-- Dependency Redis không khả dụng được ghi ở `Warning`, còn request tương ứng được ghi `503` ở `Error` với cùng correlation ID.
-- Toàn solution build thành công với 0 warning, 0 error. Không chạy hoặc thêm test theo quyết định hiện tại của chủ dự án.
+Các sink hiện tại:
+
+```text
+Console
+→ mọi môi trường
+
+Rolling File
+→ bật trong Development
+```
+
+## Request Logging
+
+`ApplicationRequestLoggingMiddleware` ghi một bản tóm tắt sau khi request hoàn tất.
+
+Thông tin chính gồm:
+
+```text
+HTTP Method
+Route Template
+Status Code
+Elapsed Time
+Correlation ID
+```
+
+Ví dụ route được ghi:
+
+```text
+api/accounts/{accountNumber}
+```
+
+thay vì ghi Account Number thực tế.
+
+Middleware không chủ động ghi:
+
+```text
+Request Body
+Response Body
+Query String
+Cookie
+Authorization Header
+```
+
+Mức log theo HTTP status:
+
+```text
+2xx / 3xx → Information
+4xx       → Warning
+5xx       → Error
+```
+
+Health Check thành công được ghi ở mức `Debug`.
+
+## Correlation ID
+
+SUBank sử dụng header:
+
+```text
+X-Correlation-ID
+```
+
+để liên kết request, error response, Application Log và Audit Log.
+
+Nếu Client gửi Correlation ID hợp lệ, API sử dụng giá trị đó.
+
+Nếu không có hoặc không hợp lệ, server tự tạo GUID mới.
+
+Correlation ID tối đa 100 ký tự và chỉ chấp nhận:
+
+```text
+chữ
+số
+-
+_
+.
+```
+
+Giá trị này được:
+
+```text
+gán vào HttpContext.TraceIdentifier
+        ↓
+đưa vào logging scope
+        ↓
+trả lại trong response header
+        ↓
+đưa vào ProblemDetails
+```
+
+Correlation ID chỉ dùng để tra cứu và liên kết log, không dùng để authentication hoặc authorization.
+
+## Bảo vệ dữ liệu nhạy cảm
+
+`SensitiveLogPropertyEnricher` loại bỏ một số property nhạy cảm trước khi log được ghi.
+
+Các property được lọc gồm những nhóm như:
+
+```text
+Password
+TransactionPassword
+AccessToken
+RefreshToken
+Authorization
+Cookie
+SigningKey
+ConnectionString
+ApiKey
+TokenHash
+SessionId
+RedisKey
+IdentityCardNumber
+AccountNumber
+Phone
+Email
+```
+
+Ngoài ra request logging không đọc body hoặc credential từ request.
+
+Enricher chỉ là lớp bảo vệ bổ sung. Code vẫn không được chủ động đưa password, token, connection string hoặc dữ liệu khách hàng nhạy cảm vào `ILogger`.
+
+## Console và Rolling File
+
+Console JSON được bật ở mọi môi trường.
+
+Trong Development, file logging được bật với cấu hình hiện tại:
+
+```text
+Directory              = logs
+FileSizeLimitBytes      = 10485760
+RetainedFileCountLimit  = 31
+RetainedDays            = 14
+```
+
+File được roll theo ngày và theo dung lượng.
+
+Dạng file:
+
+```text
+src/SUBank.Api/logs/subank-api-YYYYMMDD.log
+```
+
+Trong cấu hình gốc, file logging mặc định tắt.
+
+Điều này phù hợp với deployment container, nơi console thường là output chính cho hệ thống hosting thu thập.
+
+## Audit Log
+
+`AuditLog` được lưu trong SQL Server và dùng cho các sự kiện nghiệp vụ hoặc bảo mật.
+
+Ví dụ:
+
+```text
+LOGIN_SUCCESS
+LOGIN_FAILED
+IDENTITY_LOCKOUT_TRIGGERED
+TRANSFER
+TRANSFER_FAILED
+CASH_DEPOSIT
+CUSTOMER_SUSPENDED_BY_ADMIN
+REFRESH_TOKEN_REUSE
+```
+
+Application Log và Audit Log có mục đích khác nhau:
+
+```text
+Application Log
+→ hệ thống xảy ra chuyện gì?
+
+Audit Log
+→ user nào đã thực hiện hành động gì?
+```
+
+Không nên lưu các sự kiện nghiệp vụ quan trọng chỉ bằng Application Log.
+
+## Error Handling
+
+API sử dụng `ApiExceptionHandler` để chuyển exception thành HTTP response phù hợp.
+
+Một số mapping chính:
+
+```text
+AuthenticationException      → 401
+NotFoundException            → 404
+ConflictException            → 409
+BusinessRuleException        → 422
+DependencyUnavailableException → 503
+Unhandled Exception          → 500
+```
+
+Response lỗi sử dụng `ProblemDetails` và chứa `correlationId` để hỗ trợ tra cứu log.
+
+Dependency unavailable được ghi log ở mức `Warning`.
+
+Unhandled system error được ghi ở mức `Error`.
+
+## Giới hạn
+
+Application Log hiện chỉ được triển khai ở ASP.NET Core API.
+
+Blazor WebAssembly chạy trong browser và chưa có hệ thống tập trung để gửi Client log về server.
+
+Rolling file cũng không phải cơ chế backup.
+
+Backup dữ liệu SQL Server và Audit Log được xử lý như một vấn đề vận hành riêng, không thuộc trách nhiệm của Application Log.

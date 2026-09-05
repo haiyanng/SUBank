@@ -47,7 +47,7 @@ else if (SelectedAccount is { } account)
             <div class="bank-card-footer">
                 <div>
                     <div class="bank-card-label">Số dư khả dụng</div>
-                    <div class="bank-card-balance money">@account.Balance.ToString("N2") <small>@account.Currency</small></div>
+                    <div class="bank-card-balance money">@account.Balance.ToString("N0") <small>@account.Currency</small></div>
                 </div>
 
                 @if (accounts.Count > 1)
@@ -77,7 +77,7 @@ else if (SelectedAccount is { } account)
                             <strong>@FormatAccount(option.AccountNumber)</strong>
                             <small>@GetAccountLabel(option)</small>
                         </span>
-                        <span class="account-option-balance money">@option.Balance.ToString("N2") <small>@option.Currency</small></span>
+                        <span class="account-option-balance money">@option.Balance.ToString("N0") <small>@option.Currency</small></span>
                     </button>
                 }
             </div>

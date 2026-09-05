@@ -26,10 +26,10 @@ public sealed class QuestStatementPdfGenerator : IStatementPdfGenerator
             column.Spacing(8);
             column.Item().Row(row =>
             {
-                row.RelativeItem().Text($"So du dau ky: {statement.OpeningBalance:N2}");
-                row.RelativeItem().Text($"So du cuoi ky: {statement.ClosingBalance:N2}").Bold();
+                row.RelativeItem().Text($"So du dau ky: {statement.OpeningBalance:N0}");
+                row.RelativeItem().Text($"So du cuoi ky: {statement.ClosingBalance:N0}").Bold();
             });
-            column.Item().Text($"Tong ghi co: {statement.TotalCredit:N2} | Tong ghi no: {statement.TotalDebit:N2}");
+            column.Item().Text($"Tong ghi co: {statement.TotalCredit:N0} | Tong ghi no: {statement.TotalDebit:N0}");
             column.Item().Table(table =>
             {
                 table.ColumnsDefinition(columns =>
@@ -48,7 +48,7 @@ public sealed class QuestStatementPdfGenerator : IStatementPdfGenerator
                     table.Cell().Element(BodyCell).Text(VietnamTime(item.CreatedAtUtc).ToString("dd/MM HH:mm"));
                     table.Cell().Element(BodyCell).Text(item.ReferenceNo);
                     table.Cell().Element(BodyCell).Text(item.Direction);
-                    table.Cell().Element(BodyCell).AlignRight().Text(item.Amount.ToString("N2"));
+                    table.Cell().Element(BodyCell).AlignRight().Text(item.Amount.ToString("N0"));
                 }
             });
         });

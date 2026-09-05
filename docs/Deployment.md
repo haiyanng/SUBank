@@ -1,49 +1,166 @@
 # Triển khai SUBank
 
-## Mục tiêu
+## Mô hình triển khai
 
-Production/demo dùng một HTTPS origin: ASP.NET Core phục vụ Blazor WebAssembly, REST dưới `/api` và SignalR dưới `/hubs`. Development vẫn chạy Client và API trên hai port HTTPS riêng.
+### Development
 
-`dotnet publish src/SUBank.Api/SUBank.Api.csproj -c Release` tự publish Client và chép `wwwroot` vào artifact API. Không deploy riêng output Client khi dùng topology này.
+Trong Development:
+
+```text
+Blazor Client
+https://localhost:7081
+
+ASP.NET Core API
+https://localhost:7247
+
+SQL Server
+SUBankV2
+
+Redis
+localhost:6379
+```
+
+Client và API chạy riêng để thuận tiện phát triển.
+
+Development cho phép API tự:
+
+- chạy EF Core Migration;
+- tạo Demo Seed Data.
+
+### Production / Demo
+
+Khi publish, ASP.NET Core API đồng thời publish Blazor WebAssembly Client và đưa static file của Client vào `wwwroot`.
+
+Vì vậy có thể triển khai SUBank dưới cùng một HTTPS origin:
+
+```text
+/
+→ Blazor WebAssembly
+
+/api/*
+→ REST API
+
+/hubs/*
+→ SignalR
+```
+
+Không cần deploy Client thành một application riêng nếu sử dụng topology này.
+
+## Publish
+
+Lệnh publish:
+
+```bash
+dotnet publish src/SUBank.Api/SUBank.Api.csproj -c Release
+```
+
+`SUBank.Api.csproj` có build target tự publish `SUBank.Client` và copy `wwwroot` vào artifact của API.
 
 ## Cấu hình bắt buộc
 
-Secret và connection string chỉ được cấp qua secret store/environment của nền tảng, không ghi vào repository:
+Các cấu hình Production quan trọng gồm:
 
-- `Jwt__SigningKey`: ít nhất 32 byte ngẫu nhiên; không dùng key Development.
-- `ConnectionStrings__DefaultConnection`: SQL Server runtime credential không có quyền DDL.
-- `ActiveSession__RedisConnection`: Redis bật TLS khi provider hỗ trợ.
-- `ActiveSession__KeyPrefix`: prefix riêng cho môi trường.
-- `AllowedHosts`: danh sách hostname thật, phân tách bằng dấu `;`; Production không chấp nhận `*`.
+```text
+ConnectionStrings__DefaultConnection
+Jwt__SigningKey
+ActiveSession__RedisConnection
+ActiveSession__KeyPrefix
+AllowedHosts
+```
 
-`DatabaseInitialization:ApplyMigrationsOnStartup` và `SeedDemoData` mặc định là `false`. API fail-fast nếu một trong hai cờ bị bật ngoài Development. Migration Production phải chạy bằng job/principal riêng sau backup theo [Backup-Restore-Runbook.md](Backup-Restore-Runbook.md); runtime Production không có quyền tự migrate hoặc seed demo.
+Secret thật không được ghi trực tiếp vào repository.
 
-## TLS và reverse proxy
+JWT Signing Key phải có ít nhất 32 byte.
 
-Production bật HSTS và HTTPS redirection. Nếu TLS kết thúc tại reverse proxy, proxy phải chuyển `X-Forwarded-For` và `X-Forwarded-Proto`.
+Production không cho phép:
 
-Chỉ bật `DeploymentSecurity__UseForwardedHeaders=true` khi đã biết IP proxy tin cậy. Mỗi IP phải được khai báo trong `DeploymentSecurity__KnownProxies__0`, `__1`, ... . API từ chối khởi động nếu bật forwarded headers mà không có allow-list. Không tin toàn bộ forwarded headers từ Internet vì kẻ tấn công có thể giả mạo scheme/IP.
+```text
+AllowedHosts = *
+```
 
-Nếu provider không công bố IP/CIDR proxy ổn định, chưa được tự bật chế độ tin mọi proxy. Phải chốt cấu hình theo tài liệu chính thức của provider và ghi bằng chứng bên dưới.
+## Migration và Seed Data
 
-## Health check
+Trong Development:
 
-- `/health/live`: process còn sống; không probe dependency.
-- `/health/ready`: SQL Server và Redis sẵn sàng.
-- `/health`: alias readiness để tương thích cấu hình cũ.
+```text
+ApplyMigrationsOnStartup = true
+SeedDemoData = true
+```
 
-Load balancer chỉ gửi traffic khi readiness trả `200`. Readiness `503` không được coi là lỗi process để restart liên tục.
+có thể được sử dụng để tạo database demo nhanh.
 
-## Checklist bằng chứng trước demo
+Ngoài Development, API từ chối khởi động nếu bật hai cấu hình này.
 
-- [ ] Provider/URL/region và hostname đã chốt.
-- [ ] HTTPS request được app nhận là `https`; HTTP bị redirect hoặc từ chối tại edge.
-- [ ] `AllowedHosts` chỉ có hostname thật.
-- [ ] Cookie refresh có `Secure`, `HttpOnly`, `SameSite=Strict` và đúng path.
-- [ ] `/`, deep link `/accounts` và một asset `/_framework/*` trả về đúng nội dung.
-- [ ] Route API không tồn tại trả `404`, không trả `index.html`.
-- [ ] `/health/live` và `/health/ready` được cấu hình đúng vai trò.
-- [ ] SignalR kết nối qua WebSocket và nhận đúng scheme/origin.
-- [ ] Backup/PITR, alert và restore drill có evidence.
+Vì vậy Production Migration phải được thực hiện riêng trước hoặc trong quá trình deployment.
 
-Cho đến khi các ô trên được kiểm tra trên host thật, phần phụ thuộc provider của X02 và X08 vẫn ở trạng thái chờ xác minh.
+Không chạy Demo Seed Data trên Production.
+
+## HTTPS
+
+Ngoài Development, API bật:
+
+```text
+HSTS
+HTTPS Redirection
+```
+
+Nếu ứng dụng chạy sau reverse proxy, có thể bật Forwarded Headers.
+
+Khi bật:
+
+```text
+DeploymentSecurity__UseForwardedHeaders=true
+```
+
+phải khai báo các proxy tin cậy trong:
+
+```text
+DeploymentSecurity__KnownProxies
+```
+
+## Health Check
+
+SUBank có các endpoint:
+
+```text
+/health/live
+→ kiểm tra process API
+
+/health/ready
+→ kiểm tra SQL Server và Redis
+
+/health
+→ readiness tương tự /health/ready
+```
+
+`/health/live` không phụ thuộc SQL hoặc Redis.
+
+Readiness trả lỗi nếu dependency cần thiết không hoạt động.
+
+## Logging
+
+Production mặc định ghi Application Log ra console.
+
+Rolling file mặc định tắt trong cấu hình Production.
+
+Chi tiết logging nằm trong `Application-Logging.md`.
+
+## Trước khi demo
+
+Kiểm tra tối thiểu:
+
+- HTTPS hoạt động.
+- Trang Blazor tải được.
+- Login hoạt động.
+- SQL Server kết nối được.
+- Redis kết nối được.
+- `/health/ready` trả trạng thái Healthy.
+- SignalR kết nối được.
+- Production secret không nằm trong repository.
+- Migration đã được áp dụng đúng database.
+
+## Trạng thái hiện tại
+
+Repository đã có cấu hình để publish SUBank thành một ứng dụng ASP.NET Core + Blazor WebAssembly cùng origin.
+
+Provider triển khai Production/Demo cụ thể chưa phải một phần cố định của source code và cần được chọn, cấu hình và kiểm chứng riêng.

@@ -175,7 +175,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
             var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
             notifier.Clear();
             using var customer = await CreateAuthorizedClientAsync("0900000001");
-            var request = new TransferRequest(AccountA, AccountB, 12_345.67m, "Integration transfer", "123456");
+            var request = new TransferRequest(AccountA, AccountB, 12_345m, "Integration transfer", "123456");
             using var first = await PostWithIdempotencyAsync(customer, "/api/transfers", key, request);
             using var replay = await PostWithIdempotencyAsync(customer, "/api/transfers", key, request);
             Assert.Equal(HttpStatusCode.OK, first.StatusCode);
@@ -222,7 +222,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     {
         var prefix = $"test-concurrent-{Guid.NewGuid():N}";
         var before = await GetBalancesAsync();
-        var amount = decimal.Round(before[AccountA] * 0.75m, 2);
+        var amount = decimal.Truncate(before[AccountA] * 0.75m);
         try
         {
             using var firstClient = await CreateAuthorizedClientAsync("0900000001");
@@ -253,7 +253,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
             var notifier = factory.Services.GetRequiredService<TestRealtimeNotifier>();
             notifier.Clear();
             using var teller = await CreateAuthorizedClientAsync("teller");
-            var request = new CashDepositRequest(AccountA, 54_321.25m, "Integration deposit");
+            var request = new CashDepositRequest(AccountA, 54_321m, "Integration deposit");
             using var first = await PostWithIdempotencyAsync(teller, "/api/teller/cash-deposits", key, request);
             using var replay = await PostWithIdempotencyAsync(teller, "/api/teller/cash-deposits", key, request);
             Assert.Equal(HttpStatusCode.OK, first.StatusCode);
@@ -287,14 +287,14 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         {
             using var customer = await CreateAuthorizedClientAsync("0900000001");
             using var transfer = await PostWithIdempotencyAsync(customer, "/api/transfers", key,
-                new TransferRequest(AccountA, AccountB, 1_234.56m, "Statement test", "123456"));
+                new TransferRequest(AccountA, AccountB, 1_234m, "Statement test", "123456"));
             transfer.EnsureSuccessStatusCode();
             var created = (await transfer.Content.ReadFromJsonAsync<TransferResponse>())!;
             var now = DateTime.UtcNow;
             var statement = await customer.GetFromJsonAsync<AccountStatement>(
                 $"/api/accounts/{AccountA}/statements?year={now.Year}&month={now.Month}");
             Assert.Contains(statement!.Transactions, x => x.ReferenceNo == created.ReferenceNo && x.Direction == "Debit");
-            Assert.True(statement.TotalDebit >= 1_234.56m);
+            Assert.True(statement.TotalDebit >= 1_234m);
             Assert.Equal(statement.OpeningBalance + statement.TotalCredit - statement.TotalDebit, statement.ClosingBalance);
 
             using var pdf = await customer.GetAsync(
@@ -317,7 +317,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
     {
         using var customer = await CreateAuthorizedClientAsync("0900000001");
         using var generatedResponse = await customer.PostAsJsonAsync("/api/qr/generate",
-            new GenerateQrRequest(AccountA, 250_000.50m, "QR integration"));
+            new GenerateQrRequest(AccountA, 250_000m, "QR integration"));
         generatedResponse.EnsureSuccessStatusCode();
         var generated = (await generatedResponse.Content.ReadFromJsonAsync<GeneratedQr>())!;
         var png = Convert.FromBase64String(generated.PngBase64);
@@ -331,7 +331,7 @@ public sealed class ApiSmokeTests : IClassFixture<SUBankWebApplicationFactory>
         decodedResponse.EnsureSuccessStatusCode();
         var decoded = (await decodedResponse.Content.ReadFromJsonAsync<QrTransferData>())!;
         Assert.Equal(AccountA, decoded.AccountNumber);
-        Assert.Equal(250_000.50m, decoded.Amount);
+        Assert.Equal(250_000m, decoded.Amount);
         Assert.Equal("QR integration", decoded.Message);
 
         Assert.Equal(HttpStatusCode.NotFound, (await customer.PostAsJsonAsync("/api/qr/generate",

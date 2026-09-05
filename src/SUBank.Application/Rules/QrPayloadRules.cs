@@ -14,7 +14,7 @@ public static class QrPayloadRules
         if (amount is not null) BankingRules.ValidateAmount(amount.Value);
         var normalizedMessage = BankingRules.NormalizeDescription(message);
         return $"subank://transfer?v=1&account={accountNumber}" +
-               (amount is null ? "" : $"&amount={amount.Value.ToString("0.00", CultureInfo.InvariantCulture)}") +
+               (amount is null ? "" : $"&amount={amount.Value.ToString("0", CultureInfo.InvariantCulture)}") +
                (normalizedMessage is null ? "" : $"&message={Uri.EscapeDataString(normalizedMessage)}");
     }
 
@@ -37,7 +37,7 @@ public static class QrPayloadRules
         decimal? amount = null;
         if (values.TryGetValue("amount", out var amountText))
         {
-            if (!decimal.TryParse(amountText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed))
+            if (!decimal.TryParse(amountText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                 throw new BusinessRuleException("Số tiền trong QR không hợp lệ.");
             BankingRules.ValidateAmount(parsed);
             amount = parsed;

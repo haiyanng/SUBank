@@ -8,7 +8,7 @@ public static class BankingRules
     public const int TransactionPasswordLength = 6;
     public const int MaximumIdempotencyKeyLength = 64;
     public const int MaximumDescriptionLength = 280;
-    public const decimal MaximumMonetaryValue = 9_999_999_999_999_999.99m;
+    public const decimal MaximumMonetaryValue = 999_999_999_999_999_999m;
 
     public static void ValidateAccountNumber(string? value, string fieldName)
     {
@@ -27,8 +27,8 @@ public static class BankingRules
 
     public static void ValidateAmount(decimal amount)
     {
-        if (amount <= 0 || decimal.Round(amount, 2) != amount)
-            throw new BusinessRuleException("Số tiền phải lớn hơn 0 và có tối đa 2 chữ số thập phân.");
+        if (amount <= 0 || decimal.Truncate(amount) != amount)
+            throw new BusinessRuleException("Số tiền phải là số nguyên lớn hơn 0 VND.");
         if (amount > MaximumMonetaryValue)
             throw new BusinessRuleException("Số tiền vượt quá giới hạn lưu trữ của hệ thống.");
     }

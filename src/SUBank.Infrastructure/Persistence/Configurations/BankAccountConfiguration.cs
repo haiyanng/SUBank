@@ -16,7 +16,7 @@ internal sealed class BankAccountConfiguration : IEntityTypeConfiguration<BankAc
         });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.AccountNumber).HasMaxLength(10).IsUnicode(false).IsRequired();
-        builder.Property(x => x.Balance).HasPrecision(18, 2);
+        builder.Property(x => x.Balance).HasPrecision(18, 0);
         builder.Property(x => x.Currency).HasMaxLength(3).IsUnicode(false).IsFixedLength();
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
         builder.Property(x => x.RowVersion).IsRowVersion();

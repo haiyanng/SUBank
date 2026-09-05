@@ -46,7 +46,7 @@ else
                                          @bind-Value="model.Source" @bind-Value:after="SourceChanged">
                                 @foreach (var account in accounts)
                                 {
-                                    <option value="@account.AccountNumber">@account.AccountNumber - @account.Balance.ToString("N2") VND</option>
+                                    <option value="@account.AccountNumber">@account.AccountNumber - @account.Balance.ToString("N0") VND</option>
                                 }
                             </InputSelect>
                             <ValidationMessage For="@(() => model.Source)" />
@@ -81,7 +81,7 @@ else
                         <div class="mb-3">
                             <label class="form-label" for="amount">Số tiền (VND)</label>
                             <InputNumber id="amount" class="form-control form-control-lg money"
-                                         min="0.01" max="9999999999999999.99" step="0.01"
+                                         min="1" max="999999999999999999" step="1"
                                          ParsingErrorMessage="Vui lòng điền số tiền."
                                          @bind-Value="model.Amount" />
                             <ValidationMessage For="@(() => model.Amount)" />
@@ -355,13 +355,13 @@ else
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (Amount < 0.01m || Amount > 9_999_999_999_999_999.99m)
+            if (Amount < 1m || Amount > 999_999_999_999_999_999m)
                 yield return new ValidationResult(
-                    "Số tiền phải từ 0,01 đến 9.999.999.999.999.999,99.",
+                    "Số tiền phải từ 1 đến 999.999.999.999.999.999 VND.",
                     [nameof(Amount)]);
-            else if (decimal.Round(Amount, 2) != Amount)
+            else if (decimal.Truncate(Amount) != Amount)
                 yield return new ValidationResult(
-                    "Số tiền chỉ được có tối đa 2 chữ số thập phân.",
+                    "Số tiền phải là số nguyên VND.",
                     [nameof(Amount)]);
 
             if (!string.IsNullOrWhiteSpace(Source) &&

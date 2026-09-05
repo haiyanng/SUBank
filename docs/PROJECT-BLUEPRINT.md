@@ -1,350 +1,395 @@
-# Bản thiết kế dự án SUBank V2.4
+# SUBank Project Blueprint
 
-## Quản lý tài liệu
+## 1. Tổng quan
 
-- Phiên bản: 2.4
-- Trạng thái: ĐÃ DUYỆT ĐỂ LẬP KẾ HOẠCH TRIỂN KHAI
-- Ngày: 2026-08-26
-- Nhóm thực hiện: một sinh viên phát triển với sự hỗ trợ của Codex
-- Thời gian bàn giao: bảy ngày
-- Tài liệu nguồn: `SUBank_V2.4_Codex_Master_Spec_FINAL.docx`
-- Quy tắc ưu tiên: tài liệu trong repository này ghi lại các chỉnh sửa đã thống nhất đối với tài liệu nguồn. Khi hai tài liệu mâu thuẫn, file này được ưu tiên áp dụng cho đến khi tài liệu nguồn được cập nhật và review lại.
+SUBank 3S là ứng dụng Online Banking mô phỏng được xây dựng nhằm minh họa các nghiệp vụ ngân hàng số
+cơ bản trong phạm vi đồ án.
 
-## Mục tiêu sản phẩm
+Hệ thống hỗ trợ ba nhóm người dùng:
 
-SUBank V2.4 là ứng dụng ngân hàng mô phỏng có giao diện responsive. Hệ thống chỉ hỗ trợ luân chuyển tiền nội bộ SUBank và không được tuyên bố có kết nối NAPAS, VietQR, thanh toán liên ngân hàng, eKYC thật hoặc đủ điều kiện hoạt động như ngân hàng thực tế.
+- Customer
+- Teller
+- Admin
 
-Hệ thống được xây dựng dưới dạng modular monolith bằng .NET 10 và Clean Architecture:
+SUBank chỉ thực hiện các nghiệp vụ nội bộ trong hệ thống. Project không kết nối NAPAS, VietQR, ngân
+hàng bên ngoài hoặc hệ thống eKYC thực tế.
 
-- Blazor WebAssembly Client độc lập, sử dụng Bootstrap và CSS tùy chỉnh có phạm vi rõ ràng.
-- ASP.NET Core Web API.
-- SQL Server ở máy local và Azure SQL cho bản cloud demo.
-- Redis chỉ dùng để kiểm soát active session và rate limiting.
-- SignalR cung cấp trải nghiệm realtime theo cơ chế best-effort, không bao giờ là nguồn xác thực bảo mật.
-- OpenAI API cung cấp trợ lý đọc và phân tích giao dịch trong phạm vi giới hạn.
+Project hiện không hỗ trợ Customer tự đăng ký. Trong môi trường Development, Customer được tạo thông
+qua Seed Data để đại diện cho các khách hàng đã hoàn tất quy trình đăng ký ngoài phạm vi demo.
 
-## Thứ tự ưu tiên bàn giao
+## 2. Công nghệ sử dụng
 
-### P0 - bắt buộc để demo
+SUBank sử dụng các công nghệ chính:
 
-- Database schema, constraints, migrations, deterministic seed và hướng dẫn dựng lại database sạch.
-- Role và demo user bằng ASP.NET Core Identity.
-- Login, refresh, logout, `/me`, Identity lockout 15 phút sau ba lần sai và Admin có thể mở sớm.
-- Admin suspension độc lập dành riêng cho Customer, có lý do, audit và thu hồi phiên.
-- Customer xem danh sách/chi tiết tài khoản và lịch sử/chi tiết giao dịch đúng quyền.
-- Chuyển tiền nội bộ SUBank có transaction password, idempotency, SQL transaction nguyên tử, xử lý concurrency và audit.
-- Teller cash deposit có SQL transaction nguyên tử và audit.
-- Authenticated shell responsive và navigation thay đổi theo role.
-- Unit test và integration test cho authentication, ownership, transfer, concurrency và deposit.
+- Backend: ASP.NET Core 10 Web API.
+- Frontend: Blazor WebAssembly.
+- UI: Bootstrap và custom CSS.
+- Database: SQL Server.
+- ORM: Entity Framework Core.
+- Authentication: ASP.NET Core Identity và JWT.
+- Session: Redis.
+- Realtime: SignalR.
+- API Documentation: Swagger.
+- PDF: tạo PDF ở backend.
 
-### Development Seed Data tối thiểu
+Solution được tổ chức theo kiến trúc phân lớp, tham khảo các nguyên tắc của Clean Architecture, với
+các project Domain, Contracts, Application, Infrastructure, API và Client.
 
-Seed phải tạo bốn user riêng biệt bằng ASP.NET Core Identity:
+Project hiện sử dụng service abstraction/service implementation để tổ chức nghiệp vụ; không triển
+khai CQRS hoặc MediatR.
 
-| User | Role | Mục đích demo |
-|---|---|---|
-| `0900000001` | Customer | Chuyển tiền, xem account/history, tạo QR |
-| `0900000002` | Customer | Nhận tiền, quét QR và kiểm chứng realtime |
-| `teller` | Teller | Thực hiện Cash Deposit |
-| `admin` | Admin | Tìm kiếm, xem chi tiết, khóa/mở khóa Customer và xem Audit Log |
+## 3. Cấu trúc hệ thống
 
-Teller và Admin là hai user riêng, không gán đồng thời hai role này cho một demo user. Password và transaction password Development phải là dữ liệu demo rõ ràng, không tái sử dụng secret thật và được tài liệu hóa an toàn trong README dành cho Development.
+Các project chính:
 
-### P1 - dự kiến trình diễn
+- SUBank.Domain
+- SUBank.Contracts
+- SUBank.Application
+- SUBank.Infrastructure
+- SUBank.Api
+- SUBank.Client
 
-- Redis kiểm soát một active session duy nhất.
-- SignalR `ForceLogout` và thông báo số dư/giao dịch sau khi database commit.
-- Tạo SUBank QR, quét bằng camera, đọc QR từ ảnh upload và điền trước thông tin transfer.
-- Sao kê tháng/năm và xuất PDF ở mức tối thiểu.
-- Trợ lý tài chính OpenAI chỉ đọc, sử dụng backend tool xác định và có fallback an toàn.
+Quan hệ phụ thuộc chính:
 
-### P2 - cắt trước nếu có nguy cơ trễ
+SUBank.Domain
+        ↑
+SUBank.Application
+        ↑
+SUBank.Infrastructure
+        ↑
+SUBank.Api
 
-- Quản lý beneficiary.
-- Biểu đồ nâng cao và phần trang trí vượt ngoài visual concept đã khóa.
-- Cache dữ liệu tham chiếu.
-- Freeze/unfreeze tài khoản.
-- Trang trí PDF nâng cao.
-- Monitoring độc lập trên cloud khi chưa có credential.
+SUBank.Contracts
+    ↑         ↑
+SUBank.Api   SUBank.Client
 
-Tính đúng đắn của P0 quan trọng hơn số lượng tính năng P1/P2. Không tính năng P1/P2 nào được làm mất ổn định authentication, authorization, tính đúng của balance hoặc luồng transfer.
+SUBank.Client là Blazor WebAssembly frontend và giao tiếp với backend thông qua HTTP API.
 
-## Dependency giữa các project
+Business logic không được đặt trực tiếp trong UI. Controller tiếp nhận request, kiểm tra thông tin
+cần thiết và gọi các service abstraction. Các implementation liên quan đến EF Core, Identity, Redis,
+QR, PDF và hạ tầng khác nằm trong Infrastructure.
 
-- `SUBank.Domain` -> không phụ thuộc project nào.
-- `SUBank.Contracts` -> không phụ thuộc project nào.
-- `SUBank.Application` -> Domain, Contracts.
-- `SUBank.Infrastructure` -> Application, Domain.
-- `SUBank.Api` -> Application, Infrastructure, Contracts.
-- `SUBank.Client` -> chỉ Contracts.
+Chi tiết kiến trúc được trình bày trong Architecture.md.
 
-Controller chỉ xử lý vấn đề vận chuyển dữ liệu HTTP. Controller không được query trực tiếp banking `DbContext` hoặc chứa business logic làm thay đổi balance.
+## 4. Vai trò người dùng
 
-Teller và Admin có thể dùng chung Staff Portal/layout để giảm UI trùng lặp, nhưng authorization vẫn tách biệt:
+### 4.1 Customer
 
-- Cash Deposit yêu cầu role Teller.
-- Quản lý trạng thái Customer và Audit Logs yêu cầu role Admin; server phải xác minh target có role Customer cùng `CustomerProfile`.
-- Teller truy cập Admin endpoint phải nhận `403`.
-- Admin truy cập Teller Cash Deposit endpoint phải nhận `403`.
-- Navigation ẩn theo role chỉ phục vụ UX và không thay thế API policy.
+Customer có thể:
 
-## Mô hình Identity đã hiệu chỉnh
+- Đăng nhập và đăng xuất.
+- Xem danh sách tài khoản và số dư.
+- Xem lịch sử và chi tiết giao dịch.
+- Thực hiện chuyển tiền nội bộ SUBank.
+- Chuyển tiền thông qua SUBank QR.
+- Xem thông tin hồ sơ cá nhân.
+- Xem thông báo realtime.
+- Xem sao kê theo tháng hoặc năm.
+- Xuất sao kê PDF.
 
-ASP.NET Core Identity là nguồn sự thật của authentication. Quan hệ role là nhiều-nhiều thông qua `AspNetUserRoles`, dù mỗi demo user của SUBank chỉ được gán một business role.
+Customer chỉ được truy cập dữ liệu thuộc quyền của mình.
 
-Sử dụng các field sẵn có của Identity:
+### 4.2 Teller
 
-- `AccessFailedCount`
-- `LockoutEnabled`
-- `LockoutEnd`
+Teller đại diện cho nhân viên giao dịch.
 
-Không tạo `FailedLoginAttempts` hoặc `IsLocked` custom vì chúng trùng chức năng. `ApplicationUser` có thể bổ sung:
+Các chức năng chính:
 
-- `LockedAtUtc`: hiển thị thời điểm khóa cho Admin và cung cấp audit context.
-- `TransactionPasswordHash`: credential riêng, độc lập với login password.
-- `IsAdminSuspended`, `AdminSuspendedAtUtc`, `AdminSuspensionReason`, `AdminSuspendedByUserId`: trạng thái khóa thủ công dành riêng cho Customer.
-- `IsActive`.
-- `CreatedAtUtc`.
+- Đăng nhập với role Teller.
+- Tìm kiếm và xem thông tin cần thiết của Customer.
+- Thực hiện Cash Deposit vào tài khoản Customer.
 
-Lần đăng nhập sai thứ ba liên tiếp khóa user trong 15 phút. Hết thời hạn, Identity tự cho phép đăng nhập lại; Admin vẫn có thể mở khóa sớm bằng cách reset `LockoutEnd`, `AccessFailedCount` và `LockedAtUtc`. Đăng nhập thành công reset số lần thất bại.
+Teller không có quyền sử dụng các chức năng quản trị dành cho Admin.
 
-Admin suspension không dùng `LockoutEnd` hoặc `IsActive`. Admin chỉ được quản lý Customer: tìm theo họ tên/số điện thoại, xem chi tiết, khóa bằng modal xác nhận và lý do bắt buộc, hoặc mở lại tài khoản. Khóa thủ công cập nhật metadata, revoke `UserSession`/refresh token, ghi Audit Log rồi dọn Redis và gửi `ForceLogout` best-effort. Gỡ Admin suspension không xóa Identity lockout; mở Identity lockout không gỡ Admin suspension. Tab “Bị khóa” có thể gom cả hai loại nhưng UI phải chỉ rõ nguyên nhân. Không có API hoặc nút xóa Customer.
+### 4.3 Admin
 
-## Authentication và cookie
+Admin chịu trách nhiệm quản lý Customer và theo dõi hoạt động quản trị.
 
-### Môi trường Development
+Các chức năng chính:
 
-Client và API chạy trên hai HTTPS localhost port khác nhau. API phải:
+- Tìm kiếm Customer.
+- Xem chi tiết Customer.
+- Khóa Customer kèm lý do.
+- Mở khóa Customer.
+- Thu hồi phiên đang hoạt động khi Customer bị khóa.
+- Xem Audit Log.
 
-- Chỉ cho phép đúng Client origin đã cấu hình.
-- Cho phép gửi credential; không kết hợp credential với wildcard origin.
-- Sử dụng refresh cookie có `HttpOnly`, `Secure` và chính sách `SameSite` đã được review.
-- Refresh/logout bắt buộc custom CSRF header; nếu request có `Origin` thì chỉ chấp nhận same-origin hoặc exact Development Client origin.
+Hệ thống không cung cấp chức năng xóa Customer thật.
 
-Access token có thời hạn ngắn và chỉ được giữ trong memory của Blazor. Không lưu access token vào `localStorage` hoặc `sessionStorage`. Khi reload trang, Client có thể gọi refresh bằng HttpOnly cookie để nhận access token mới trong phần logical-session lifetime còn lại. Việc reload/refresh không được kéo dài mốc hết hạn tuyệt đối.
+## 5. Authentication và Authorization
 
-Browser chỉ persist dữ liệu điều phối không phải credential: `SessionId` theo tab trong `sessionStorage` và logout intent gắn session trong `localStorage`; không dùng `history.state`/cookie JavaScript làm fallback. Nếu storage hỏng/không khả dụng thì auth-cookie flow fail closed. Các giá trị này không xác thực request; refresh token vẫn chỉ ở HttpOnly cookie và access token vẫn chỉ ở .NET/WASM memory.
+SUBank sử dụng ASP.NET Core Identity làm nền tảng quản lý user, password, role và login lockout.
 
-### Môi trường Production/demo
+Authentication sử dụng:
 
-API phục vụ Blazor WASM đã publish dưới cùng một HTTPS origin. REST endpoint dùng `/api`, SignalR dùng `/hubs`, còn client-side route fallback về `index.html`. Cách triển khai này giảm độ phức tạp của CORS, cookie và CSRF nhưng vẫn giữ nguyên ranh giới giữa các project và layer.
+- JWT Access Token.
+- Refresh Token trong HttpOnly cookie.
+- Redis Active Session.
+- Role-based Authorization.
 
-## Thiết kế active session
+Access token không được lưu persistent trong localStorage hoặc sessionStorage.
 
-Mỗi user chỉ có một logical active session. Redis lưu active-session pointer với TTL đồng bộ với thời gian sống của refresh/session. Thay thế session phải là thao tác nguyên tử bằng Redis atomic command hoặc Lua script phù hợp; cấm sử dụng RedLock.
+Customer có phiên hết hạn tuyệt đối sau 15 phút kể từ lúc đăng nhập. Teller và Admin sử dụng access
+token 15 phút, refresh theo nhu cầu và logical session tối đa bảy ngày.
 
-Customer dùng logical session tuyệt đối 15 phút từ lúc đăng nhập theo `Jwt:CustomerSessionMinutes`; Client dùng timer cùng foreground resume check, không proactive refresh và không kéo dài phiên khi reload. Teller/Admin dùng logical session tuyệt đối bảy ngày theo `Jwt:RefreshTokenDays`; access token chỉ refresh theo nhu cầu trước protected request/reconnect, không có heartbeat nền. Mọi refresh token được rotate trong cùng session phải kế thừa `UserSession.ExpiresAtUtc`; Redis chỉ renew TTL khi key vẫn chứa đúng `sid`. Hai refresh cùng token được phân xử bằng atomic conditional update và conflict retry một lần.
+Hệ thống hỗ trợ Single Active Session. Khi cùng một user đăng nhập bằng session mới, session cũ
+không còn được chấp nhận cho protected API.
 
-Tab đã bind `SessionId` không được bootstrap/non-bootstrap sang session khác; tab mới chưa bind có thể nhận session từ shared cookie. Login, refresh và logout được serialize xuyên tab bằng Web Lock giữ đến khi `fetch`, response body và kiểm tra response tối thiểu hoàn tất để response `Set-Cookie` cũ không ghi đè cookie mới; không dùng lease có TTL. Response login không đọc được, sai schema hoặc lệch `SessionId` giữa header/body phải chặn restore và thử thu hồi tất cả session ID liên quan ngay trong khóa; không xác định được ID thì chặn toàn bộ restore cho đến lần login tường minh. Logout intent gắn đúng session, không khóa nhầm tab của session mới. Request pipeline ngoài phạm vi QR chụp generation và bearer token; response cũ bị bỏ nếu session thay đổi. Logout cookie gửi CSRF header cùng expected `SessionId`, không gửi bearer; Client chỉ xác nhận khi server trả marker đã revoke. Nếu cookie đã thuộc session mới hoặc cookie request lỗi, Client dùng endpoint riêng với bearer cũ và `credentials: omit` để chỉ revoke session cũ, không đọc/ghi cookie mới. SQL token family/`UserSession` được revoke trước; Redis và SignalR chạy best-effort sau commit. Phiên login bị Client từ chối cũng dùng đường bearer-bound không mutate cookie.
+Identity Lockout và Admin Suspension là hai cơ chế độc lập:
 
-Fallback authorization policy deny-by-default chạy trước ranh giới nghiệp vụ. Sau authentication và trước khi chạy nghiệp vụ, protected request kiểm tra `sub` và `sid` trong JWT với Redis, sau đó đối chiếu `UserSession` cùng trạng thái active, Identity lockout và Admin suspension của user trong SQL. Session thiếu, không khớp, đã revoke, hết hạn hoặc user bị khóa/vô hiệu hóa không được chạy protected operation. Khi Redis hoặc SQL không hoạt động, hệ thống phải fail closed: trả `503` cho dependency unavailable, không được âm thầm bỏ qua session security.
+- Identity Lockout xử lý đăng nhập sai nhiều lần.
+- Admin Suspension cho phép Admin chủ động khóa Customer.
 
-SQL chỉ lưu session history và refresh token dưới dạng hash. Không log raw token, raw refresh token, session identifier, Redis key hoặc secret. SignalR `ForceLogout` gửi đến group của session cũ và chỉ cải thiện UX; Redis, SQL session history và middleware mới là lớp bảo mật có thẩm quyền. Hub chỉ chấp nhận `sid` hợp lệ ở cả Redis và SQL; `BalanceChanged` và `TransactionReceived` chỉ gửi tới group của active `sid`, không gửi theo user group. Client reconnect bằng access token hiện hành, gộp các event gần nhau trước khi tải lại và tự retry connection có backoff, nhưng REST/SQL vẫn là nguồn sự thật nếu event bị bỏ lỡ.
+Khi Customer bị Admin khóa, active session của Customer được thu hồi.
 
-## Biểu diễn tiền
+Chi tiết token, cookie, Redis session, multi-tab handling, CSRF/CORS và các quy tắc bảo mật được
+trình bày trong Security-Design.md.
 
-- Độ chính xác trong SQL: `decimal(18,2)`.
-- Kiểu dữ liệu .NET: `decimal`; tuyệt đối không dùng `double` hoặc `float`.
-- Tiền tệ: chỉ VND.
-- Amount phải lớn hơn 0 và có tối đa hai chữ số thập phân.
-- UI format theo quy ước VND và thông thường ẩn phần thập phân bằng 0 không có ý nghĩa.
+## 6. Database
 
-## Khóa nội bộ và identifier dùng ở API
+Database Development mặc định là:
 
-SUBank dùng `long` làm primary key nội bộ cho các bảng nghiệp vụ vì kiểu dữ liệu này nhỏ, tuần tự, dễ debug và có hiệu năng index/join tốt trên SQL Server. Không thêm cột `PublicId` dạng GUID/ULID hàng loạt nếu entity đã có business identifier phù hợp hoặc không cần được truy cập trực tiếp từ Client.
+`SUBankV2`
 
-Quy ước theo entity:
+Project sử dụng SQL Server và Entity Framework Core Code First.
 
-| Entity | Khóa nội bộ | Identifier dùng ở API/UI |
-|---|---|---|
-| `ApplicationUser` | Identity user ID | Lấy từ authentication context; không cho Customer truyền user ID để đọc profile của mình |
-| `CustomerProfile` | `long Id` | Không cần public identifier; dùng `/api/profile` |
-| `BankAccount` | `long Id` | `AccountNumber` dạng string và unique |
-| `FinancialTransaction` | `long Id` | `ReferenceNo` do server tạo và unique |
-| `Beneficiary` | `long Id` | Có thể dùng `Id` trong endpoint nhưng bắt buộc kiểm tra ownership |
-| `RefreshToken` | `long Id` | Không expose |
-| `UserSession` | `long Id` | Không expose |
-| `AuditLog` | `long Id` | Chỉ phục vụ authorized Admin query; không cần public GUID |
-| `AiQueryLog` | `long Id` | Không expose |
+Các nhóm dữ liệu chính gồm:
 
-Account number được lưu dạng chuỗi với constraint rõ ràng về độ dài/format, không coi là kiểu số. `ReferenceNo` là business reference để hiển thị, tìm kiếm và đối chiếu khi demo.
+- ASP.NET Core Identity.
+- Customer Profile.
+- Bank Account.
+- Financial Transaction.
+- User Session và Refresh Token.
+- Audit Log.
+- Các dữ liệu hỗ trợ nghiệp vụ liên quan.
 
-Identifier khó đoán không thay thế authorization. Mọi resource endpoint vẫn phải kiểm tra ownership hoặc role. Nếu Customer đổi account number, reference number hoặc beneficiary ID trong URL/DTO, backend không được trả dữ liệu của Customer khác.
+CustomerProfile lưu thông tin nghiệp vụ của Customer và liên kết với Identity user.
 
-Account resolution yêu cầu authentication, account number khớp chính xác, rate limiting và chỉ trả dữ liệu hiển thị người nhận ở mức tối thiểu. Không trả balance hoặc profile. Response dành cho Teller và Customer có thể khác nhau theo use case.
+BankAccount đại diện cho tài khoản ngân hàng.
 
-## CustomerProfile và beneficiary đã hiệu chỉnh
+FinancialTransaction ghi nhận các chuyển động tiền đã hoàn tất trong hệ thống.
 
-Không tạo entity hoặc bảng `CustomerContact`. `CustomerProfile` là nguồn sự thật duy nhất cho thông tin cá nhân và liên hệ của Customer, gồm tối thiểu:
+Tiền được xử lý bằng decimal; không sử dụng float hoặc double cho balance và transaction amount.
 
-- `FullName`
-- `DateOfBirth`
-- `IdentityCardNumber` là số CCCD/CMND demo tổng hợp
-- `Phone`
-- `Email`
-- `PermanentAddress`
-- `TemporaryAddress`
+Chi tiết bảng, khóa, constraint và quan hệ được trình bày trong Database-Design.md.
 
-`ApplicationUser` chỉ phục vụ login/security/role và liên kết 1-0..1 với `CustomerProfile`. Customer bắt buộc có `ApplicationUser.UserName` bằng đúng `CustomerProfile.Phone`; Teller và Admin dùng username nghiệp vụ. `CustomerProfile.Phone` vẫn là nguồn sự thật, còn username Customer là bản sao một chiều phục vụ Identity login. Không dùng Email làm login identifier và không dùng các cột Email/Phone có sẵn trong schema Identity làm nguồn contact nghiệp vụ. Nếu bổ sung luồng đổi số điện thoại, profile và username phải được cập nhật nguyên tử để không khóa nhầm quyền đăng nhập.
+## 7. Development Seed Data
 
-Teller và Admin không cần `CustomerProfile` vì họ không phải Customer. Endpoint `/api/profile` xác định Customer từ authentication context và không nhận CustomerId từ Client.
+API tạo dữ liệu demo khi chạy trong môi trường Development.
 
-Vì beneficiary chỉ là tài khoản nội bộ SUBank, beneficiary tham chiếu `DestinationAccountId` bằng foreign key thay vì chỉ lưu account-number string chưa được bảo vệ. Áp dụng unique constraint cho `(CustomerId, DestinationAccountId)`.
+Seed hiện tại gồm:
 
-## Constraint của financial transaction
+- 5 Customer.
+- 1 Teller.
+- 1 Admin.
+- 5 Customer Profile.
+- 17 tài khoản ngân hàng demo.
 
-`FinancialTransaction` chỉ ghi nhận chuyển động tiền đã commit. Những lần thử thất bại được ghi trong `AuditLog`.
+Các user Development:
 
-Invariant tại Application và database:
+- 0900000001 — Customer.
+- 0900000002 — Customer.
+- 0900000003 — Customer.
+- 0900000004 — Customer.
+- 0900000005 — Customer.
+- teller — Teller.
+- admin — Admin.
 
-- `Amount > 0`.
-- `Transfer`: source và destination đều bắt buộc và phải khác nhau.
-- `CashDeposit`: source phải null và destination bắt buộc.
-- Mỗi lần thay đổi balance tạo đúng một financial transaction đã commit.
-- `ReferenceNo` do server tạo và phải unique.
-- Currency của account là VND.
-- Balance không được âm.
-- Thời gian được lưu theo UTC, ưu tiên `DateTimeOffset` khi phù hợp.
+Đối với Customer demo, số điện thoại đồng thời được sử dụng làm username đăng nhập.
 
-Nếu giữ cột transaction status, phải giải thích mục đích rõ ràng; không được thêm lần thử thất bại thành financial transaction giả.
+Thông tin đăng nhập và danh sách tài khoản demo đầy đủ được ghi trong README.md ở thư mục gốc.
 
-## Tính đúng đắn của transfer
+Seed Data chỉ phục vụ Development/Demo và không đại diện cho quy trình onboarding Customer thực tế.
 
-Transfer yêu cầu:
+## 8. Chuyển tiền nội bộ
 
-- Customer đã authentication và có Redis session đang active.
-- Source thuộc Customer và đang Active.
-- Destination có trạng thái hợp lệ để nhận tiền.
-- Source khác destination.
-- Amount dương, đúng scale và source có đủ balance theo dữ liệu SQL.
-- Transaction password riêng biệt và hợp lệ.
-- User xác nhận rõ ràng.
-- Idempotency key bắt buộc.
+SUBank hỗ trợ chuyển tiền giữa các tài khoản nội bộ.
 
-Idempotency key là unique trong phạm vi actor/use case đã authentication. Gửi lại cùng key và payload trả kết quả cũ; dùng cùng key với payload khác trả `409`.
+Một giao dịch chuyển tiền hợp lệ phải đáp ứng các điều kiện chính:
 
-Debit, credit, chèn transaction record và financial success audit cần tính nguyên tử phải chạy trong cùng một SQL transaction. Sử dụng `RowVersion` cho optimistic concurrency. Conflict không an toàn phải rollback và trả `409`; cấm Redis balance cache và distributed lock.
+- Customer đã authentication.
+- Tài khoản nguồn thuộc Customer.
+- Tài khoản nguồn và tài khoản nhận khác nhau.
+- Tài khoản nhận tồn tại và hợp lệ.
+- Số tiền lớn hơn 0.
+- Tài khoản nguồn đủ số dư.
+- Transaction Password hợp lệ.
+- Có Idempotency Key.
 
-Việc nhập transaction password phải có rate limiting theo user/session, thông báo lỗi an toàn và audit event. Không bao giờ log transaction password hoặc hash của nó.
+Debit tài khoản nguồn, credit tài khoản nhận và tạo bản ghi giao dịch được xử lý trong SQL
+transaction để đảm bảo tính nguyên tử.
 
-## Thiết kế QR
+Hệ thống sử dụng concurrency control để hạn chế xung đột khi nhiều request cùng tác động lên
+balance.
 
-SUBank V2.4 tự thiết kế và triển khai **SUBank QR nội bộ**. Hệ thống không tích hợp NAPAS/VietQR, không sử dụng settlement liên ngân hàng và không được mô tả tính năng này như một kết nối thanh toán thật.
+Redis không được sử dụng làm nguồn sự thật cho số dư. SQL Server là nguồn dữ liệu có thẩm quyền đối
+với account và transaction.
 
-Payload phiên bản đầu tiên:
+## 9. Cash Deposit
+
+Cash Deposit là nghiệp vụ dành cho Teller.
+
+Teller chọn Customer hoặc account hợp lệ và nhập số tiền cần nộp.
+
+Backend kiểm tra authorization và dữ liệu đầu vào trước khi cập nhật balance.
+
+Việc cập nhật balance và tạo Financial Transaction được thực hiện trong cùng SQL transaction.
+
+Các thao tác quan trọng được ghi Audit Log.
+
+Admin không được sử dụng Teller Cash Deposit endpoint chỉ vì có quyền Admin; authorization được kiểm
+tra theo role của từng nghiệp vụ.
+
+## 10. SUBank QR
+
+SUBank sử dụng QR nội bộ, không phải VietQR hoặc NAPAS QR.
+
+QR dùng để hỗ trợ điền thông tin vào form chuyển tiền. Ví dụ:
 
 ```text
-QR tĩnh: subank://transfer?v=1&account=0900000001
-QR động: subank://transfer?v=1&account=0900000001&amount=500000&message=TienAn
+subank://transfer?v=1&account=0900000001
 ```
 
-Payload chỉ chứa dữ liệu hỗ trợ nhập transfer gồm version, account number, amount tùy chọn và message tùy chọn. Không đưa CustomerId, internal database ID, balance, password, transaction password, token, session ID hoặc recipient name có thẩm quyền vào QR.
+QR có thể chứa version, account number, amount tùy chọn và message tùy chọn.
 
-V2.4 bao gồm:
+Hệ thống hỗ trợ:
 
-- Tạo SUBank QR tĩnh và động.
-- Quét bằng camera qua HTTPS.
-- Quét từ ảnh upload để dự phòng khi demo trên laptop.
+- Tạo QR.
+- Quét QR bằng camera.
+- Đọc QR từ ảnh upload PNG/JPEG/WebP.
+- Điền trước thông tin chuyển tiền.
 
-QR là input không đáng tin cậy và chỉ được dùng để điền trước form transfer thông thường. Phải validate scheme, version, account format, amount range/scale, message length và kích thước payload đã decode. Backend đã authentication luôn resolve tên người nhận từ SQL. User review, transaction password, confirmation, idempotency, ownership, balance và concurrency check vẫn bắt buộc.
+QR không chứa password, transaction password, access token, session ID hoặc balance.
 
-Luồng bắt buộc:
+Sau khi đọc QR, backend vẫn phải xác minh tài khoản nhận. Customer vẫn phải review giao dịch và hoàn
+thành quy trình transfer thông thường.
 
-```text
-Quét camera hoặc upload ảnh QR
-        ↓
-Client decode và validate cấu trúc ban đầu
-        ↓
-Authenticated API resolve account number từ SQL
-        ↓
-Hiển thị người nhận thật và điền trước form Transfer
-        ↓
-User review amount/message
-        ↓
-Nhập transaction password và Confirm
-        ↓
-POST /api/transfers với idempotency key
-        ↓
-SQL transaction, audit và post-commit SignalR
-```
+Camera trên trình duyệt yêu cầu HTTPS.
 
-QR không có money-movement engine riêng và không được bỏ qua bất kỳ control nào của transfer thông thường. Camera scan yêu cầu HTTPS; upload ảnh là fallback bắt buộc cho laptop/demo. Nếu cần nói về trải nghiệm tương tự sản phẩm thị trường, chỉ được mô tả đây là luồng mô phỏng quen thuộc, không tuyên bố tương thích hoặc tham gia VietQR/NAPAS.
+## 11. Sao kê và PDF
 
-## Sao kê và PDF
+Customer có thể xem sao kê theo tháng hoặc năm.
 
-Statement là authorized read model được truy vấn từ `FinancialTransaction`; không tạo bảng Statement. V2.4 có chức năng xuất PDF tối thiểu ở server. Trước khi chọn thư viện phải kiểm tra license, khả năng chạy Docker, tình trạng bảo trì và khả năng render ổn định. Trang trí nâng cao là P2.
+Dữ liệu sao kê được tạo từ account và transaction hiện có, không sử dụng bảng Statement riêng.
 
-Số dư hiện tại và ledger dùng để tính số dư đầu/cuối kỳ phải thuộc cùng một cửa sổ đọc logic. Service mở một SQL transaction `RepeatableRead` ngắn, đọc và giữ khóa chia sẻ trên account trước, sau đó mới chốt `asOfUtc`; mọi truy vấn movement đều dùng chung cận trên này và thứ tự `CreatedAtUtc, Id`. Cách làm dựa trên invariant rằng mọi chuyển/nộp tiền đều cập nhật `BankAccount` và thêm `FinancialTransaction` trong cùng transaction. Deadlock SQL 1205 được retry một lần; transaction được kết thúc trước khi map response hoặc render PDF để không giữ khóa trong công việc CPU.
+Hệ thống hỗ trợ xuất sao kê thành PDF ở backend.
 
-Không chọn `Snapshot` ở runtime vì SQL Server hiện chưa được cấu hình `ALLOW_SNAPSHOT_ISOLATION`. Khi tải ghi thực tế đủ lớn, việc bật snapshot phải là quyết định deployment/database có kiểm chứng riêng, không phải câu lệnh tự thay đổi database lúc ứng dụng khởi động.
+Customer chỉ được tạo và xem sao kê của tài khoản thuộc quyền sở hữu của mình.
 
-## Trợ lý AI
+## 12. Realtime Notification
 
-ChatGPT Plus không cung cấp lượt sử dụng OpenAI API. Trợ lý được deploy cần OpenAI API billing riêng, project budget, API key và environment secret.
+SignalR được sử dụng để cải thiện trải nghiệm realtime.
 
-Trợ lý chỉ expose allow-listed read-only tool. Backend kiểm tra authorization cho mọi tool call của Customer hiện tại và tính kết quả tiền bằng deterministic SQL cùng `decimal`. Không có write tool, arbitrary SQL, balance mutation hoặc Admin action.
+Một số thay đổi như giao dịch, số dư hoặc trạng thái session có thể được thông báo đến Client sau
+khi nghiệp vụ chính đã hoàn tất.
 
-AI input, transaction description và provider output đều là dữ liệu không đáng tin cậy. Phải giới hạn input/history, kiểm thử prompt injection, cấu hình timeout, xử lý `429`, rate limit theo user, chỉ gửi dữ liệu tối thiểu và có failure path không cần AI. Core banking vẫn phải hoạt động khi OpenAI unavailable.
+SignalR không phải nguồn sự thật của dữ liệu và không thay thế authentication hoặc authorization.
 
-## Logging và audit
+Nếu realtime event bị mất, Client vẫn có thể lấy trạng thái hiện tại thông qua REST API.
 
-Phân biệt ba loại dữ liệu:
+## 13. Logging và Audit
 
-- `FinancialTransaction`: sự thật về chuyển động tiền đã commit.
-- `AuditLog`: actor, hành động, target, kết quả, correlation context và thời gian của sự kiện bảo mật/nghiệp vụ.
-- Structured technical log: chẩn đoán và exception thông qua `ILogger`/Serilog.
+SUBank phân biệt ba loại dữ liệu.
 
-Hạ tầng hiện tại ghi console JSON ở mọi môi trường và rolling file trong Development. Request completion event chỉ chứa method, route template, status, elapsed time và correlation context; không thu raw path, route value, query hoặc body. Correlation ID hợp lệ được trả qua header/ProblemDetails và tự điền vào audit mới phát sinh trong cùng HTTP request. Chi tiết cấu hình, retention và giới hạn nằm tại [Application-Logging.md](Application-Logging.md).
+- Financial Transaction ghi nhận chuyển động tiền đã hoàn tất.
+- Audit Log ghi nhận các hành động nghiệp vụ hoặc bảo mật quan trọng như actor, action, target,
+  result, timestamp và correlation context.
+- Application Log dùng để chẩn đoán hoạt động của ứng dụng và exception.
 
-Global ProblemDetails handling, correlation ID, safe request logging và top-level sensitive-property removal là hạ tầng nền tảng. Chúng không thay thế kỷ luật không truyền secret/PII vào `ILogger`, không phải backup và không biến technical log thành audit. Audit cho lần thử thất bại có thể được ghi riêng sau khi financial transaction rollback; lỗi ghi audit phải được technical log nhưng không được tạo financial transaction giả.
+Trong Development, application log được ghi ra console và rolling file.
 
-## Chính sách kiểm thử
+Hệ thống không chủ động ghi password, token hoặc secret vào log.
 
-Test phải đi cùng từng vertical slice, không dồn đến cuối:
+Chi tiết được trình bày trong Application-Logging.md.
 
-- Test migration/seed đi cùng data milestone.
-- Test login/lockout/refresh đi cùng authentication.
-- Test session replacement đi cùng Redis integration.
-- Test nhiều tab phải phủ login/refresh/logout overlap, cookie response đảo thứ tự, bootstrap `SessionId` mismatch, logout mất mạng, hidden-tab resume và stale response sau session change.
-- Test ownership đi cùng account/transaction endpoint.
-- Test validation, idempotency, atomicity và concurrency đi cùng transfer.
-- Test role và atomicity đi cùng Teller/Admin operation.
-- Test allow-list, injection, timeout và `429` đi cùng AI.
+## 14. Testing
 
-Các bằng chứng UAT `Actual Result`, screenshot, Figma approval, deployment success và human review phải giữ trạng thái `CHỜ THỰC HIỆN` cho đến khi con người thật sự tạo bằng chứng.
+Project sử dụng cả Manual Testing và Automated Testing.
 
-## Trình tự triển khai trong bảy ngày
+Manual Testing là phần chính để kiểm tra các luồng nghiệp vụ, giao diện và hành vi end-to-end trong
+quá trình phát triển.
 
-1. Hiệu chỉnh thiết kế, ERD, EF mapping, constraints, migration, deterministic seed và data tests.
-2. Identity login/lockout, JWT, refresh-cookie rotation, logout, `/me`, CSRF/CORS, Login UI và auth tests.
-3. Account đúng quyền, transaction history/detail, dashboard, ownership tests và responsive shell.
-4. Transaction password, idempotent atomic transfer, concurrency, audit, confirmation/result UI và transfer tests.
-5. Teller deposit, Admin unlock, Redis session enforcement và SignalR `ForceLogout` nếu P0 vẫn ổn định.
-6. QR generate/upload/camera, statement PDF và constrained AI theo đúng thứ tự ưu tiên.
-7. Docker same-origin deployment, Azure SQL, Upstash Redis, smoke test, responsive QA, sửa lỗi nghiêm trọng và hoàn thiện tài liệu nộp. Không bắt đầu tính năng mới trong ngày cuối.
+Automated Test được giữ ở phạm vi nhỏ, tập trung vào một số logic và business rule quan trọng thay
+vì cố đạt coverage cao hoặc bao phủ mọi edge case.
 
-## Mục tiêu triển khai demo
+Các nhóm ưu tiên gồm:
 
-- Render free Docker Web Service: API, Blazor đã publish và SignalR.
-- Azure SQL free offer: database có thẩm quyền.
-- Upstash Redis free tier: active session và rate limiting.
-- OpenAI API: external dependency có tính phí riêng theo mức sử dụng thấp.
+- Authentication và authorization quan trọng.
+- Ownership.
+- Transfer.
+- Cash Deposit.
+- Validation và business rule cốt lõi.
 
-Tài liệu phải gọi đây là bản demo miễn phí/chi phí thấp, không được cam kết production hosting hoàn toàn miễn phí. Phải ghi lại và kiểm tra trước buổi bảo vệ các giới hạn như sleep, cold start, quota, archival, không có SLA và thay đổi từ provider.
+Automated Test không thay thế hoàn toàn quá trình kiểm thử thủ công.
 
-## Phạm vi hoãn và cấm triển khai
+## 15. Health Check
 
-- React/Vite.
-- Customer self-registration và eKYC thật.
-- Thanh toán liên ngân hàng/NAPAS/VietQR thật.
-- Redis balance cache, RedLock hoặc SignalR backplane khi chỉ có một API instance.
-- ML.NET fraud model.
-- Microservices, Kafka, RabbitMQ, Event Bus và Event Sourcing.
-- AI write tool hoặc arbitrary SQL.
-- Lưu access token trong persistent storage của trình duyệt.
-- Admin chỉnh balance trực tiếp.
-- FX, loan, card, interest, cheque book và stop cheque.
+Backend cung cấp các health endpoint:
 
-## Quy tắc kiểm soát thay đổi
+- `/health/live`
+- `/health/ready`
+- `/health`
 
-Không được âm thầm thay đổi schema, authentication, API, session, money hoặc quyết định bảo mật trong lúc triển khai. Trước khi code, phải ghi lại thay đổi đề xuất, lý do, đánh đổi và quyết định của con người trong blueprint này hoặc một ADR được liên kết.
+Health Check được sử dụng để kiểm tra trạng thái API và các dependency quan trọng như SQL Server và
+Redis.
+
+## 16. Deployment
+
+Trong Development:
+
+- API và Blazor Client chạy trên HTTPS localhost.
+- SQL Server chạy local.
+- Redis mặc định tại localhost:6379.
+
+Khi publish API, Blazor Client được publish cùng artifact để bản demo hoặc Production có thể chạy
+cùng một HTTPS origin.
+
+Các production secret như database connection string, JWT signing key và Redis connection string
+không được commit trực tiếp vào source code.
+
+Chi tiết cấu hình và quy trình triển khai được trình bày trong Deployment.md.
+
+Quy trình backup và restore database được trình bày trong Backup-Restore-Runbook.md.
+
+## 17. Phạm vi chưa triển khai
+
+Các chức năng sau không thuộc phiên bản hiện tại:
+
+- Customer self-registration.
+- eKYC thực tế.
+- Chuyển tiền liên ngân hàng.
+- NAPAS/VietQR integration.
+- AI Financial Assistant.
+- AI/Fraud Detection.
+- ML.NET Fraud Model.
+- Microservices.
+- Kafka/RabbitMQ/Event Bus.
+- Loan.
+- Card management.
+- Foreign exchange.
+- Interest calculation.
+
+Các chức năng này có thể được xem xét trong hướng phát triển tương lai nhưng không được mô tả là
+chức năng hiện có của SUBank.
+
+## 18. Tài liệu liên quan
+
+- Architecture.md — kiến trúc hệ thống.
+- Database-Design.md — thiết kế database.
+- Security-Design.md — authentication, authorization và session security.
+- Application-Logging.md — application logging.
+- Deployment.md — deployment.
+- Backup-Restore-Runbook.md — backup và restore.
+- Issue-Register.md — lỗi và các phát hiện kỹ thuật trong quá trình phát triển.
+- AI-Design.md — phạm vi thiết kế AI.
+- AI-Usage-Report.md — báo cáo sử dụng AI trong quá trình phát triển.
+- Figma-Status.md — trạng thái thiết kế Figma.
+- diagrams/ — các sơ đồ của hệ thống.
+
+## 19. Giới hạn của project
+
+SUBank là ứng dụng phục vụ mục đích học tập và demo.
+
+Project mô phỏng một số nguyên tắc thường gặp trong hệ thống ngân hàng như authentication,
+authorization, transaction atomicity, audit và session management, nhưng không được coi là core
+banking system hoàn chỉnh hoặc sản phẩm đủ điều kiện triển khai cho ngân hàng thực tế.

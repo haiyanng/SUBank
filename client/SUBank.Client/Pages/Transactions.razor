@@ -122,7 +122,7 @@ else if (accounts is not null)
                         </span>
 
                         <span class="transaction-amount @(outgoing ? "is-outgoing" : "is-incoming")">
-                            @(outgoing ? "−" : "+")@item.Amount.ToString("N2") <small>VND</small>
+                            @(outgoing ? "−" : "+")@item.Amount.ToString("N0") <small>VND</small>
                         </span>
 
                         <span class="transaction-chevron" aria-hidden="true">›</span>

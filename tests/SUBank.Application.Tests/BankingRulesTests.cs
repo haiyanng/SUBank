@@ -8,15 +8,14 @@ public sealed class BankingRulesTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(1.001)]
-    public void ValidateAmount_RejectsNonPositiveOrMoreThanTwoDecimals(decimal amount) =>
+    [InlineData(1.01)]
+    public void ValidateAmount_RejectsNonPositiveOrFractionalAmounts(decimal amount) =>
         Assert.Throws<BusinessRuleException>(() => BankingRules.ValidateAmount(amount));
 
     [Theory]
-    [InlineData(0.01)]
     [InlineData(1)]
-    [InlineData(9999999999999999)]
-    public void ValidateAmount_AcceptsPositiveMoneyWithAtMostTwoDecimals(decimal amount) =>
+    [InlineData(999999999999999999)]
+    public void ValidateAmount_AcceptsPositiveWholeVndAmount(decimal amount) =>
         BankingRules.ValidateAmount(amount);
 
     [Fact]

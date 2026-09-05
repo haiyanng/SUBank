@@ -18,7 +18,7 @@ internal sealed class FinancialTransactionConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.ReferenceNo).HasMaxLength(30).IsUnicode(false).IsRequired();
         builder.Property(x => x.CreatedByUserId).HasMaxLength(450).IsRequired();
         builder.Property(x => x.Type).HasConversion<string>().HasMaxLength(20);
-        builder.Property(x => x.Amount).HasPrecision(18, 2);
+        builder.Property(x => x.Amount).HasPrecision(18, 0);
         builder.Property(x => x.Description).HasMaxLength(280);
         builder.Property(x => x.IdempotencyKey).HasMaxLength(64).IsUnicode(false).IsRequired();
         builder.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();

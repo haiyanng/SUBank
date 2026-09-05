@@ -1,133 +1,1161 @@
-# Thiết kế bảo mật SUBank V2.4
+# Thiết kế bảo mật SUBank
 
 ## Trạng thái
 
-ĐANG TRIỂN KHAI THEO FEATURE - ACTIVE SESSION ĐÃ CÓ CODE; BẰNG CHỨNG BROWSER/REDIS/CONCURRENCY CÒN CHỜ
+Tài liệu này mô tả các cơ chế bảo mật đang có trong code hiện tại của SUBank.
 
-Tài liệu này mô tả control dự kiến. Một control chỉ được coi là hoàn thành khi có code, cấu hình và test evidence tương ứng.
+Các cơ chế chính đã được triển khai gồm:
+
+- ASP.NET Core Identity cho user, password, role và Identity Lockout.
+- JWT Access Token.
+- Refresh Token bằng `HttpOnly` cookie.
+- Refresh Token rotation.
+- SQL `UserSession` và `RefreshToken`.
+- Redis Active Session để giới hạn một phiên đang hoạt động cho mỗi user.
+- Role-based authorization và kiểm tra ownership ở backend.
+- Admin Suspension tách riêng với Identity Lockout.
+- CSRF protection cho các endpoint sử dụng refresh cookie.
+- Rate Limiting cho các nghiệp vụ nhạy cảm.
+- Idempotency và optimistic concurrency cho giao dịch.
+- SignalR notification theo active session.
+- Client session coordination giữa nhiều tab bằng Web Locks và browser storage.
+- Audit Log và Application Log.
+
+Một số cơ chế đã có code nhưng vẫn cần kiểm chứng thêm bằng browser thực tế hoặc môi trường Production, được ghi ở phần cuối tài liệu.
 
 ## Authentication và Identity
 
-- Sử dụng ASP.NET Core Identity và password hashing mặc định của framework.
-- Không có customer self-registration.
-- Development seed tạo tối thiểu bốn user riêng: hai Customer, một Teller và một Admin.
-- Teller và Admin không dùng chung user và không được gán chéo role trong seed mặc định.
-- Customer đăng nhập bằng `ApplicationUser.UserName` bắt buộc trùng chính xác `CustomerProfile.Phone` ở dạng 10 chữ số; Teller và Admin dùng username nghiệp vụ. Không sử dụng Email làm login identifier.
-- Email và Phone nghiệp vụ chỉ nằm trong `CustomerProfile`; không tạo bảng `CustomerContact` và không dùng Identity Email/Phone làm nguồn contact của Customer.
-- `CustomerProfile.Phone` là nguồn sự thật. Username Customer chỉ phản chiếu một chiều để Identity đăng nhập; mọi luồng đổi số điện thoại tương lai phải cập nhật cả hai giá trị nguyên tử và thu hồi phiên cũ.
-- Login password và transaction password là hai credential khác nhau, có hash riêng.
-- Không lưu hoặc log plaintext password, transaction password hoặc hash của chúng.
+SUBank sử dụng ASP.NET Core Identity thông qua `ApplicationUser`.
+
+Ba role nghiệp vụ hiện tại là:
+
+```text
+Customer
+Teller
+Admin
+```
+
+API hiện không có chức năng Customer tự đăng ký tài khoản.
+
+Customer đăng nhập bằng số điện thoại.
+
+Đối với Customer, backend kiểm tra đồng thời:
+
+```text
+ApplicationUser.UserName
+        =
+CustomerProfile.Phone
+        =
+username được nhập khi login
+```
+
+Số điện thoại Customer phải có định dạng hợp lệ theo rule của hệ thống.
+
+Teller và Admin sử dụng username nghiệp vụ và không áp dụng rule Customer Phone nói trên.
+
+Login password được ASP.NET Core Identity quản lý và hash theo cơ chế của framework.
+
+SUBank còn có Transaction Password riêng dành cho nghiệp vụ chuyển tiền.
+
+```text
+Login Password
+→ xác thực đăng nhập
+
+Transaction Password
+→ xác thực giao dịch chuyển tiền
+```
+
+`TransactionPasswordHash` được lưu trong `ApplicationUser` và được kiểm tra bằng `IPasswordHasher<ApplicationUser>`.
+
+Plaintext password và Transaction Password không được lưu trong database.
+
+Request logging hiện tại không ghi request body nên password gửi trong login/transfer không được đưa vào Application Log bởi middleware request logging.
 
 ## Identity lockout và Admin suspension
 
-Sử dụng trạng thái lockout sẵn có của Identity: `AccessFailedCount`, `LockoutEnabled` và `LockoutEnd`. Không tạo `FailedLoginAttempts` hoặc `IsLocked` custom trùng chức năng.
+SUBank có hai cơ chế khóa tài khoản độc lập:
 
-Lần sai thứ ba liên tiếp khóa user trong 15 phút. Hết thời hạn, Identity tự cho phép đăng nhập lại; Admin vẫn có thể mở khóa sớm. `LockedAtUtc` chỉ dùng để hiển thị/audit. Đăng nhập thành công reset failure count. Mở Identity lockout chỉ reset failure count, `LockoutEnd` và `LockedAtUtc`, đồng thời ghi audit.
+```text
+Identity Lockout
+        +
+Admin Suspension
+```
 
-Admin suspension là trạng thái riêng gồm `IsAdminSuspended`, `AdminSuspendedAtUtc`, `AdminSuspensionReason` và `AdminSuspendedByUserId`; không dùng `LockoutEnd` hoặc `IsActive`. Chỉ Customer có `CustomerProfile` và role Customer mới là target hợp lệ. Lý do sau khi trim phải có 3–500 ký tự. Suspension cùng việc revoke `UserSession`/refresh token và Audit Log phải commit trong một SQL transaction; Redis revoke và SignalR `ForceLogout` chạy best-effort sau commit. Resume chỉ xóa metadata suspension và không reset Identity lockout. Hệ thống không cung cấp thao tác xóa Customer.
+### Identity Lockout
 
-Login endpoint hiện có rate limiting riêng theo IP, 30 request/phút; chưa có partition riêng theo username. Thông báo lỗi không được tiết lộ password, hash hoặc trạng thái nội bộ không cần thiết.
+Identity Lockout sử dụng cơ chế có sẵn của ASP.NET Core Identity.
+
+Cấu hình hiện tại:
+
+```text
+MaxFailedAccessAttempts = 3
+DefaultLockoutTimeSpan  = 15 phút
+```
+
+Khi login sai password:
+
+```text
+Login sai
+   ↓
+AccessFailedAsync
+   ↓
+AccessFailedCount tăng
+   ↓
+đủ 3 lần
+   ↓
+Identity Lockout 15 phút
+```
+
+Khi lockout được kích hoạt, SUBank còn ghi `LockedAtUtc` để phục vụ hiển thị và audit.
+
+Nếu user đang có active session tại thời điểm bị Identity Lockout, backend thu hồi session tương ứng.
+
+Login thành công reset `AccessFailedCount`.
+
+Admin có endpoint để mở Identity Lockout của Customer trước khi hết 15 phút.
+
+Thao tác mở lockout:
+
+```text
+LockoutEnd = null
+AccessFailedCount = 0
+LockedAtUtc = null
+```
+
+và tạo Audit Log.
+
+### Admin Suspension
+
+Admin Suspension là cơ chế riêng, không sử dụng `LockoutEnd`.
+
+Các field liên quan gồm:
+
+```text
+IsAdminSuspended
+AdminSuspendedAtUtc
+AdminSuspensionReason
+AdminSuspendedByUserId
+```
+
+Admin chỉ có thể suspend user thực sự có role `Customer` và có `CustomerProfile`.
+
+Teller hoặc Admin không phải target hợp lệ của Customer Management.
+
+Lý do khóa sau khi trim phải có:
+
+```text
+3 - 500 ký tự
+```
+
+Khi Admin suspend Customer:
+
+```text
+Admin
+  ↓
+đặt IsAdminSuspended = true
+  ↓
+ghi metadata suspension
+  ↓
+revoke UserSession trong SQL
+  ↓
+revoke RefreshToken trong SQL
+  ↓
+ghi AuditLog
+  ↓
+COMMIT SQL
+  ↓
+revoke Redis session
+  ↓
+SignalR ForceLogout
+```
+
+Việc cập nhật suspension, SQL session, refresh token và Audit Log được thực hiện trước khi commit transaction.
+
+Redis revoke và SignalR `ForceLogout` được thực hiện sau commit theo cơ chế best-effort.
+
+Resume Customer chỉ xóa trạng thái Admin Suspension.
+
+```text
+Resume Admin Suspension
+≠
+Clear Identity Lockout
+```
+
+Hai cơ chế khóa không tự động xóa trạng thái của nhau.
+
+API hiện không có endpoint xóa Customer.
 
 ## Token và cookie
 
-- Access token là JWT thời hạn ngắn, chứa tối thiểu `sub`, role và `sid`.
-- Blazor chỉ giữ access token trong .NET/WASM memory; cấm lưu access token vào `localStorage`, `sessionStorage`, cookie do JavaScript đọc được hoặc `history.state`.
-- Refresh token là chuỗi ngẫu nhiên entropy cao, chỉ gửi bằng `HttpOnly`, `Secure` cookie.
-- Browser chỉ lưu dữ liệu điều phối không phải credential: `SessionId` theo tab trong `sessionStorage`, và logout intent gắn đúng `SessionId` trong `localStorage`. Không dùng `history.state` hoặc cookie JavaScript làm fallback vì các bản sao đó có thể mất/thoái lui khi điều hướng. Storage lỗi, dữ liệu sai cấu trúc hoặc không đọc/ghi lại đúng phải fail closed. Những giá trị này không có thẩm quyền authentication.
-- SQL chỉ lưu hash của refresh token.
-- Refresh token được rotate sau mỗi lần refresh thành công và token cũ bị revoke.
-- Customer có logical session tuyệt đối theo `Jwt:CustomerSessionMinutes`, hiện là 15 phút kể từ lần đăng nhập. Access token Customer hết hạn đúng mốc này; Client dùng thời lượng server trả, `Stopwatch` và đối chiếu wall clock để xóa giao diện. Khi browser suspend tab, `visibilitychange`, `focus` và `pageshow` buộc kiểm tra lại ngay lúc quay lại foreground. Reload chỉ khôi phục phần thời gian còn lại và không cộng thêm 15 phút; SQL vẫn chặn đúng deadline nếu timer giao diện bị trì hoãn.
-- Teller/Admin có logical session tuyệt đối theo `Jwt:RefreshTokenDays`, hiện là bảy ngày. Client refresh access token theo nhu cầu trước protected request khi còn không quá một phút hoặc khi SignalR reconnect; không có heartbeat/timer refresh nền. Protected request ngoài phạm vi QR chỉ retry tối đa một lần bằng request mới. Customer không proactive refresh và không retry protected request bằng refresh token.
-- Refresh token thay thế, cookie và Redis TTL của mọi role không được kéo dài quá mốc `UserSession.ExpiresAtUtc` ban đầu.
-- Tab đã bind `SessionId` chỉ được bootstrap/non-bootstrap refresh đúng session đó; mismatch khóa restore thay vì âm thầm đổi identity hoặc role. Tab mới chưa có binding có thể nhận session từ shared HttpOnly cookie rồi tự bind.
-- Pipeline protected request ngoài phạm vi QR chụp session generation và chính bearer token dùng để gửi. Response cũ bị bỏ nếu session đổi trong lúc chờ; request không được replay dưới token/session mới.
-- Backend dùng atomic conditional update để chỉ một request được rotate cùng refresh token. Request đồng thời thua trong grace period trả `409`; reuse ngoài grace mới thu hồi toàn bộ session.
-- `(UserId, SessionId)` là ranh giới token family. Logout bằng refresh token nhận diện được trong family, kể cả token đã rotate/revoke/hết hạn, revoke toàn bộ refresh token còn hiệu lực cùng `UserSession`. Nếu cookie đã thuộc session mới, bearer `sub`/`sid` của tab cũ chỉ được revoke đúng session cũ và cookie mới phải được giữ nguyên. Token cookie không nhận diện được chỉ được xác nhận session revoked khi bearer hợp lệ xác định đúng session.
-- Refresh và logout khóa cùng hàng `UserSession` trước khi rotate/revoke để token kế tiếp không lọt qua race. Session replacement và security event cũng phải revoke token/session liên quan.
-- Login, refresh và logout cùng mutate refresh cookie nên Client dùng một Web Lock xuyên tab, giữ khóa cho đến khi `fetch`, response body và kiểm tra response tối thiểu hoàn tất. Không có lease TTL có thể hết hạn khi request còn chạy. Browser không hỗ trợ Web Locks hoặc không đọc/ghi được `sessionStorage`/`localStorage` phải fail closed; phạm vi demo hỗ trợ Chrome/Edge hiện đại. Request có timeout 30 giây, chờ khóa tối đa 45 giây; Backend vẫn phải xử lý rotation/revocation nguyên tử vì browser abort không chứng minh server đã dừng.
-- Khi logout, Client lưu logout intent theo đúng `SessionId`, block restore và xóa UI trước khi gọi server; tab thuộc session khác không bị khóa nhầm. Cookie request gửi CSRF header và expected-session header nhưng không gửi bearer. Server commit SQL revocation trước, sau đó Redis compare-delete và SignalR `ForceLogout` best-effort. Client chỉ coi cookie logout được xác nhận khi nhận `X-SUBank-Session-Revoked: 1`; nếu thiếu marker hoặc request lỗi, endpoint bearer-bound với `credentials: omit` thu hồi đúng session cũ mà không mutate shared cookie. Cookie chỉ bị expire khi nó thuộc session đang logout hoặc không còn nhận diện được. Phiên login bị Client từ chối dùng cùng đường bearer-bound. JavaScript kiểm tra access token không rỗng, `SessionId` Guid N lowercase, thời hạn và user/roles ngay trong Web Lock; body không đọc được, sai schema hoặc lệch `SessionId` với header thì chặn restore và thử thu hồi bù trước khi nhả khóa. Nếu không xác định được session, browser chặn toàn bộ restore cho đến lần login tường minh; nếu header/body có hai ID canonical khác nhau, cả hai đều được đưa vào compensation.
+SUBank sử dụng hai loại token:
 
-Development tách HTTPS port và chỉ cho phép exact Client origin cùng credential. Production dùng same origin. Refresh/logout bắt buộc custom CSRF header; nếu request có `Origin` thì giá trị phải là same-origin hoặc exact Development Client origin. Refresh cookie dùng `SameSite=Strict`.
+```text
+Access Token
+Refresh Token
+```
+
+### Access Token
+
+Access Token là JWT.
+
+JWT hiện chứa các claim chính:
+
+```text
+sub
+jti
+NameIdentifier
+Name
+sid
+Role
+```
+
+Trong đó:
+
+```text
+sub
+→ UserId
+
+sid
+→ SessionId
+
+Role
+→ Customer / Teller / Admin
+```
+
+JWT được ký bằng symmetric signing key sử dụng HMAC SHA-256.
+
+Backend kiểm tra:
+
+```text
+Issuer
+Audience
+Lifetime
+Signing Key
+```
+
+Signing key phải có tối thiểu 32 byte.
+
+Giá trị mặc định hiện tại:
+
+```text
+AccessTokenMinutes      = 15
+CustomerSessionMinutes  = 15
+RefreshTokenDays        = 7
+```
+
+Đối với Customer:
+
+```text
+Login
+  ↓
+Access Token
+  ↓
+hết hạn tại deadline của Customer Session
+  ↓
+15 phút
+```
+
+Customer Session là absolute session, không được kéo dài bằng refresh.
+
+Đối với Teller/Admin:
+
+```text
+Access Token
+→ 15 phút
+
+Logical Session / Refresh Token
+→ tối đa 7 ngày
+```
+
+Teller/Admin có thể refresh Access Token khi logical session vẫn còn hiệu lực.
+
+### Access Token trên Client
+
+Blazor Client giữ Access Token trong object `ApiSession.Current` ở memory của WebAssembly.
+
+Code hiện tại không lưu Access Token vào:
+
+```text
+localStorage
+sessionStorage
+```
+
+Khi reload trang, Client sử dụng refresh cookie để khôi phục session thay vì lấy Access Token từ browser storage.
+
+### Refresh Token
+
+Refresh Token được tạo bằng random 64 byte.
+
+Raw Refresh Token được gửi cho browser bằng cookie:
+
+```text
+subank_refresh
+```
+
+Cookie hiện được cấu hình:
+
+```text
+HttpOnly = true
+Secure   = true
+SameSite = Strict
+Path     = /api/auth
+```
+
+Do `HttpOnly`, JavaScript không trực tiếp đọc được Refresh Token.
+
+SQL không lưu raw Refresh Token.
+
+Backend hash token bằng SHA-256 và chỉ lưu:
+
+```text
+TokenHash
+```
+
+### Refresh Token rotation
+
+Mỗi lần refresh thành công:
+
+```text
+Refresh Token cũ
+      ↓
+revoke
+      ↓
+tạo Refresh Token mới
+      ↓
+ReplacedByTokenId
+```
+
+Token mới tiếp tục sử dụng cùng `SessionId`.
+
+Backend sử dụng SQL locking và conditional update để hạn chế hai request đồng thời cùng rotate một refresh token.
+
+Cấu hình hiện tại có:
+
+```text
+RefreshConcurrencyGraceSeconds = 30
+```
+
+Nếu token vừa bị rotate và request cạnh tranh xuất hiện trong grace period, backend trả conflict thay vì coi ngay là token theft.
+
+Nếu refresh token đã bị thay thế bị reuse ngoài khoảng grace, backend thu hồi logical session, ghi Audit Log và gửi `ForceLogout` best-effort.
+
+Refresh Token mới không được kéo dài quá `UserSession.ExpiresAtUtc` ban đầu.
 
 ## Authorization
 
-Hệ thống áp dụng cả role-based authorization và resource ownership:
+SUBank sử dụng cả:
 
-- Customer chỉ truy cập account, transaction, statement, beneficiary và AI data của chính mình.
-- Teller Cash Deposit yêu cầu role Teller.
-- Tìm kiếm/xem/khóa/mở khóa Customer và xem Audit Log yêu cầu role Admin; server phải chặn target Teller/Admin.
-- Teller gọi Admin endpoint phải nhận `403`.
-- Admin gọi Teller Cash Deposit endpoint phải nhận `403`.
-- Việc ẩn menu trên Client không thay thế API authorization.
-- Thay đổi identifier trong URL/DTO không được giúp Customer truy cập dữ liệu người khác.
-- Fallback authorization policy là deny-by-default: endpoint không được đánh dấu public phải authenticated; health, static/SPA fallback và public auth endpoint phải explicit anonymous.
+```text
+Role-based authorization
+        +
+Resource ownership
+```
+
+Backend có fallback authorization policy:
+
+```text
+endpoint không explicit AllowAnonymous
+→ phải authenticated
+```
+
+Các endpoint public như login, refresh và health check được khai báo riêng.
+
+### Customer
+
+Các API Customer quan trọng yêu cầu role `Customer`.
+
+Customer chỉ được đọc tài khoản thuộc chính mình.
+
+Ownership được kiểm tra bằng `UserId` từ JWT kết hợp với quan hệ:
+
+```text
+ApplicationUser
+        ↓
+CustomerProfile
+        ↓
+BankAccount
+```
+
+Ví dụ khi đọc account:
+
+```text
+Account.CustomerProfile.UserId
+        =
+JWT UserId
+```
+
+Khi đọc transaction, backend cũng giới hạn transaction theo account thuộc Customer đó.
+
+Thay đổi Account Number hoặc Reference Number trên request không tự tạo quyền truy cập dữ liệu của Customer khác.
+
+### Teller
+
+Cash Deposit yêu cầu:
+
+```text
+Role = Teller
+```
+
+Admin không tự động có quyền gọi Teller endpoint.
+
+### Admin
+
+Customer Management và Audit Log yêu cầu:
+
+```text
+Role = Admin
+```
+
+Teller không có quyền gọi các Admin endpoint.
+
+Việc Client ẩn hoặc hiện menu theo role chỉ phục vụ UI.
+
+Authorization thực sự được thực hiện tại API/backend.
 
 ## Active session và Redis
 
-Redis lưu một active `sid` cho mỗi user. Thay session phải nguyên tử. Protected request kiểm tra `sub`/`sid` sau JWT authentication và trước khi chạy use case.
+SUBank triển khai Single Active Session.
 
-Khi active key thiếu, không khớp hoặc Redis unavailable, hệ thống không được bỏ qua kiểm tra. Sau khi Redis xác nhận `sid`, protected request và Hub còn đối chiếu `UserSession` cùng trạng thái active, Identity lockout và Admin suspension bền vững trong SQL. Trả `401` cho session không hợp lệ và `503` khi dependency cần thiết unavailable. SignalR `ForceLogout` chỉ cải thiện UX; Redis cùng SQL mới là lớp có thẩm quyền bảo mật.
+Mỗi user chỉ có một `SessionId` được Redis xem là active tại một thời điểm.
 
-Trạng thái implementation: đã có Redis adapter, atomic replace/compare-delete/conditional-renew bằng Lua, SQL `UserSession`, middleware fail-closed, kiểm tra durable session/user lock/suspension, absolute session lifetime theo role, concurrent refresh claim, full-family logout, cookie `Secure`, CSRF custom header kèm Origin allow-list, correlation ID và rate limit cho login/transaction password/Teller deposit. Refresh/logout dùng chung `UserSession` aggregate lock. Identity lockout và Admin suspension thu hồi SQL trước Redis; login activation lỗi có compensation ở Redis và SQL. Logout dùng expected `SessionId`, bearer fallback, SQL durable-first và post-commit Redis/SignalR best-effort. Client có foreground expiry check, per-tab binding, session-specific logout intent, Web Lock giữ xuyên suốt auth-cookie fetch, BroadcastChannel/storage notification có rerun và generation guard chống stale response. SignalR dùng group theo session, kiểm tra Redis + SQL, đóng khi JWT hết hạn và Client reconnect bằng token hiện hành. Build đã thành công nhưng các thay đổi này chưa được chạy browser nhiều tab, Redis integration hoặc concurrency/network-failure test theo quyết định hiện tại của chủ dự án.
+Redis key có dạng:
+
+```text
+subank:active-session:{UserId}
+```
+
+Value là:
+
+```text
+SessionId
+```
+
+Ví dụ:
+
+```text
+subank:active-session:user-123
+        ↓
+abc123-session
+```
+
+Khi login mới:
+
+```text
+User login
+   ↓
+tạo SessionId mới
+   ↓
+tạo UserSession trong SQL
+   ↓
+tạo RefreshToken
+   ↓
+Redis Replace active SessionId
+   ↓
+session cũ bị revoke
+```
+
+Redis sử dụng Lua script cho các thao tác:
+
+```text
+Replace
+Renew
+Revoke
+```
+
+để việc kiểm tra và thay đổi key diễn ra nguyên tử.
+
+### Kiểm tra protected request
+
+Sau JWT authentication, `ActiveSessionMiddleware` đọc:
+
+```text
+UserId
+SessionId (sid)
+```
+
+và gọi `ActiveSessionValidator`.
+
+Validator kiểm tra hai lớp:
+
+```text
+1. Redis
+   SessionId có phải active session hiện tại?
+
+2. SQL
+   UserSession có tồn tại?
+   chưa revoked?
+   chưa expired?
+   user còn active?
+   không Admin Suspended?
+   không Identity Locked?
+```
+
+Vì vậy Redis không phải lớp kiểm tra duy nhất.
+
+```text
+JWT
+ ↓
+Redis Active Session
+ ↓
+SQL UserSession + User state
+ ↓
+Authorization
+ ↓
+API
+```
+
+Nếu session không còn hợp lệ, request bị từ chối bằng `401`.
+
+Nếu Redis hoặc dependency kiểm soát session không khả dụng, hệ thống không bỏ qua kiểm tra mà trả lỗi dependency, được API map thành `503`.
+
+Đây là cơ chế fail-closed.
+
+### SQL và Redis
+
+Vai trò hai nguồn khác nhau:
+
+```text
+SQL Server
+→ lịch sử UserSession
+→ expiry
+→ revocation
+→ trạng thái user
+
+Redis
+→ SessionId nào đang active ngay lúc này
+```
+
+Redis không lưu balance và không được dùng để xác định số dư tài khoản.
+
+## Client session và nhiều tab
+
+Blazor Client triển khai thêm cơ chế điều phối session giữa nhiều browser tab.
+
+### Tab Session Binding
+
+Mỗi tab lưu SessionId của chính nó trong:
+
+```text
+sessionStorage
+```
+
+Key:
+
+```text
+subank_tab_session_id
+```
+
+SessionId này không phải credential.
+
+Nó dùng để ngăn một tab cũ âm thầm nhận nhầm session mới từ shared refresh cookie.
+
+### Logout Intent
+
+Trạng thái session đang hoặc đã bị logout được lưu trong:
+
+```text
+localStorage
+```
+
+Key:
+
+```text
+subank_logout_pending
+```
+
+Dữ liệu này cũng không phải credential.
+
+Client sử dụng:
+
+```text
+storage event
+BroadcastChannel
+visibilitychange
+focus
+pageshow
+```
+
+để các tab nhận biết thay đổi session.
+
+### Web Locks
+
+Các request làm thay đổi refresh cookie:
+
+```text
+login
+refresh
+logout
+```
+
+được điều phối bằng Web Locks API.
+
+Lock hiện có tên:
+
+```text
+subank-auth-cookie-http
+```
+
+Mục tiêu là tránh hai tab đồng thời thay đổi shared refresh cookie theo thứ tự không kiểm soát.
+
+Cấu hình Client hiện tại:
+
+```text
+chờ Web Lock tối đa: 45 giây
+auth request timeout: 30 giây
+```
+
+Nếu browser không hỗ trợ Web Locks, Client từ chối thực hiện cookie-auth flow thay vì chạy không có coordination.
+
+Code hiện hướng tới Chrome/Edge hiện đại cho cơ chế này.
+
+### Stale response protection
+
+`ApiSession` có `sessionGeneration`.
+
+Khi session thay đổi trong lúc một protected request đang chạy:
+
+```text
+request cũ
+   ↓
+session thay đổi
+   ↓
+response cũ quay về
+   ↓
+generation mismatch
+   ↓
+bỏ response
+```
+
+Request cũ không được tự động áp dụng vào session mới.
+
+Customer không dùng proactive refresh cho protected request.
+
+Teller/Admin có thể refresh Access Token khi token sắp hết hạn và retry protected request tối đa một lần sau authentication failure.
+
+## Logout
+
+Logout được thiết kế để thu hồi logical session chứ không chỉ xóa UI.
+
+Client trước tiên:
+
+```text
+Clear local logical session
+        ↓
+block tab restore
+        ↓
+gửi logout request
+```
+
+Logout request sử dụng:
+
+```text
+Refresh Cookie
+X-SUBank-CSRF
+X-SUBank-Session-ID
+```
+
+Backend kiểm tra SessionId mà tab muốn logout.
+
+Nếu refresh cookie vẫn thuộc đúng session:
+
+```text
+revoke UserSession
+revoke toàn bộ RefreshToken của session
+commit SQL
+revoke Redis
+SignalR ForceLogout
+```
+
+Nếu shared cookie đã thuộc một session khác nhưng tab cũ vẫn có Access Token hợp lệ của session cũ, backend có bearer-based fallback để chỉ revoke session cũ.
+
+Endpoint:
+
+```text
+/api/auth/reject-session
+```
+
+cho phép thu hồi session xác định bởi:
+
+```text
+JWT sub
+JWT sid
+```
+
+mà không cần sử dụng refresh cookie.
+
+Client chỉ coi cookie logout được xác nhận khi server trả marker thu hồi session phù hợp.
+
+Nếu server chưa xác nhận logout, Client vẫn khóa local UI và không tự restore session đó.
+
+## CSRF, CORS và HTTPS
+
+### CSRF
+
+Hai endpoint sử dụng refresh cookie:
+
+```text
+POST /api/auth/refresh
+POST /api/auth/logout
+```
+
+được bảo vệ bởi `RefreshCookieProtectionMiddleware`.
+
+Request phải có:
+
+```text
+X-SUBank-CSRF: 1
+```
+
+Nếu request có header `Origin`, backend chỉ chấp nhận:
+
+```text
+same origin
+
+hoặc
+
+Development Client origin được cấu hình
+```
+
+Refresh cookie còn sử dụng:
+
+```text
+SameSite=Strict
+```
+
+để bổ sung lớp bảo vệ đối với cross-site request.
+
+### CORS
+
+Trong Development, API cấu hình một Client origin cụ thể từ:
+
+```text
+Cors:ClientOrigin
+```
+
+và cho phép credential.
+
+CORS policy này chỉ được bật trong Development.
+
+Production/demo được thiết kế để Client và API chạy cùng origin.
+
+### HTTPS
+
+Refresh cookie luôn có:
+
+```text
+Secure = true
+```
+
+Ngoài Development, API bật:
+
+```text
+HSTS
+HTTPS Redirection
+```
+
+Nếu triển khai sau reverse proxy và bật forwarded headers, code yêu cầu phải cấu hình `KnownProxies`.
+
+## SignalR security
+
+`BankingHub` yêu cầu authenticated user.
+
+Khi kết nối Hub:
+
+```text
+JWT
+ ↓
+UserId + sid
+ ↓
+ActiveSessionValidator
+ ↓
+valid
+ ↓
+join group session:{SessionId}
+```
+
+Nếu SessionId không hợp lệ, Hub abort connection.
+
+SignalR endpoint cho phép JWT access token được truyền qua `access_token` query parameter riêng cho:
+
+```text
+/hubs/banking
+```
+
+Hub được cấu hình:
+
+```text
+CloseOnAuthenticationExpiration = true
+```
+
+Các realtime event hiện có gồm:
+
+```text
+BalanceChanged
+TransactionReceived
+ForceLogout
+```
+
+`BalanceChanged` và `TransactionReceived` chỉ được gửi tới active session sau khi backend kiểm tra lại active session.
+
+`ForceLogout` được gửi theo SessionId.
+
+SignalR là lớp hỗ trợ realtime UX.
+
+Nó không phải nguồn có thẩm quyền quyết định authentication hoặc balance.
+
+Nếu SignalR gửi thất bại, dữ liệu nghiệp vụ đã commit trong SQL không bị rollback.
 
 ## Bảo vệ nghiệp vụ tiền
 
-- Chỉ Application use case chuyên biệt được thay đổi balance.
-- Transfer và Teller Cash Deposit chạy trong explicit SQL transaction.
-- Balance authorization luôn dùng dữ liệu SQL, không dùng cache.
-- Transfer bắt buộc có idempotency key và optimistic concurrency bằng `RowVersion`.
-- Transaction password attempt có rate limiting, safe error và audit.
-- Teller Cash Deposit có rate limit riêng theo Teller để giảm spam request dùng idempotency key mới.
-- SignalR notification chỉ gửi sau khi commit, chỉ tới session đang active và không được dùng làm nguồn balance.
+### Transfer
+
+Transfer yêu cầu:
+
+```text
+Role Customer
+```
+
+và được bảo vệ thêm bằng Rate Limiting.
+
+Backend kiểm tra:
+
+```text
+User còn active
+không Admin Suspended
+không Identity Locked
+Source Account hợp lệ
+Destination Account hợp lệ
+Source != Destination
+Source thuộc Customer hiện tại
+hai account đang Active
+Amount hợp lệ
+đủ Balance
+Transaction Password đúng
+Idempotency-Key hợp lệ
+```
+
+Transaction Password được verify từ `TransactionPasswordHash`.
+
+### SQL Transaction
+
+Transfer chạy trong SQL transaction:
+
+```text
+Debit Source Account
+        +
+Credit Destination Account
+        +
+Create FinancialTransaction
+        +
+Create AuditLog
+        ↓
+COMMIT
+```
+
+Nếu persistence thất bại:
+
+```text
+ROLLBACK
+```
+
+Sau khi commit thành công mới gửi realtime notification.
+
+### Idempotency
+
+Transfer bắt buộc header:
+
+```text
+Idempotency-Key
+```
+
+Backend tạo Request Hash từ nội dung nghiệp vụ.
+
+Nếu cùng request được gửi lại với cùng key:
+
+```text
+không chuyển tiền lần hai
+→ trả lại transaction trước
+```
+
+Nếu cùng key nhưng payload khác:
+
+```text
+Conflict
+```
+
+Cash Deposit của Teller cũng áp dụng Idempotency Key.
+
+### Concurrency
+
+`BankAccount.RowVersion` được cấu hình làm optimistic concurrency token.
+
+Nếu hai request cùng cập nhật balance và xảy ra concurrency conflict:
+
+```text
+DbUpdateConcurrencyException
+        ↓
+Conflict
+```
+
+Cơ chế này kết hợp với SQL transaction để giảm nguy cơ double-spend trong phạm vi project.
+
+Balance luôn được đọc và cập nhật trong SQL Server.
+
+Redis không tham gia tính toán balance.
 
 ## Input, enumeration và dữ liệu nhạy cảm
 
-- Mọi DTO đều được validate ở server.
-- QR payload, transaction description và AI question là untrusted input.
-- Account resolve yêu cầu authentication, exact match, rate limit và response tối thiểu để giảm enumeration.
-- Không expose internal database ID dạng dễ đoán, hash, raw token, Redis key, secret hoặc unnecessary profile data.
-- Chỉ dùng EF Core LINQ hoặc parameterized SQL; cấm SQL ghép chuỗi từ input user/AI.
+Validation quan trọng được thực hiện tại server, không chỉ dựa vào Client.
+
+Các rule hiện có kiểm tra những dữ liệu như:
+
+```text
+login shape
+Account Number
+Amount
+Transaction Password
+Idempotency Key
+Description
+Admin Suspension Reason
+QR payload
+```
+
+Account resolution sử dụng exact Account Number và được Rate Limit.
+
+Endpoint account resolution hiện được phép cho:
+
+```text
+Customer
+Teller
+```
+
+QR Decode chỉ cho role Customer, có Rate Limiting và giới hạn file:
+
+```text
+PNG
+JPEG
+WebP
+
+tối đa 5 MB
+```
+
+Backend không sử dụng browser-supplied role để quyết định quyền.
+
+Role và UserId được lấy từ JWT đã được server xác thực.
+
+## Rate Limiting
+
+Các policy được cấu hình trong API gồm:
+
+```text
+Login
+→ 30 request / phút
+→ partition theo IP
+
+AccountResolution
+→ 20 request / phút
+→ partition theo username hoặc IP
+
+TransactionPassword
+→ 10 request / phút
+→ partition theo UserId hoặc IP
+
+CashDeposit
+→ 20 request / phút
+→ partition theo UserId hoặc IP
+
+QrDecode
+→ 15 request / phút
+→ partition theo UserId
+```
+
+Code hiện áp dụng:
+
+```text
+Login
+→ Login policy
+
+Transfer
+→ TransactionPassword policy
+
+Teller Cash Deposit
+→ CashDeposit policy
+
+Account Resolve
+→ AccountResolution policy
+
+QR Decode
+→ QrDecode policy
+```
+
+Khi vượt giới hạn, API trả:
+
+```text
+429 Too Many Requests
+```
 
 ## Logging, audit và secret
 
-- Secret nằm trong user-secrets hoặc environment/secret setting của provider; không commit giá trị thật.
-- Không log password, transaction password, raw JWT, raw refresh token, API key, connection-string secret hoặc full sensitive identity data.
-- Header correlation chỉ được chấp nhận khi dài tối đa 100 ký tự và thuộc allow-list chữ/số/`-`/`_`/`.`; giá trị khác được thay bằng GUID do server sinh. Correlation ID không phải credential.
-- Request logger chỉ ghi method, route template, status và elapsed time; không đọc raw path, route value, query, body, cookie hoặc authorization header.
-- Global exception handler ghi technical log và trả safe ProblemDetails kèm `correlationId`; response cũng có `X-Correlation-ID`.
-- Enricher loại bỏ một allow-list top-level property nhạy cảm trước sink, nhưng không phải sanitizer tổng quát cho nested object hoặc exception. Mọi lời gọi `ILogger` vẫn phải tuân thủ quy tắc không truyền secret/PII.
-- Security/business event quan trọng được ghi `AuditLog` với actor, action, result, target và thời gian.
-- Audit suspension/resume phải có Admin actor, Customer target và lý do khóa; không ghi thêm CCCD hoặc PII không cần thiết.
+SUBank sử dụng Application Log và Audit Log với mục đích khác nhau.
 
-Console/file technical log, SQL `AuditLog` và `FinancialTransaction` là ba nguồn riêng. Rolling file Development không phải backup; xem [Application-Logging.md](Application-Logging.md).
+```text
+Application Log
+→ lỗi kỹ thuật
+→ HTTP request summary
+→ dependency failure
+
+Audit Log
+→ sự kiện nghiệp vụ và bảo mật
+```
+
+Request logging hiện chỉ ghi:
+
+```text
+HTTP Method
+Route Template
+Status Code
+Elapsed Time
+```
+
+Middleware không đọc hoặc ghi:
+
+```text
+Request Body
+Cookie
+Authorization Header
+Query value
+raw route value
+```
+
+Correlation ID được nhận qua:
+
+```text
+X-Correlation-ID
+```
+
+Giá trị do Client gửi chỉ được chấp nhận nếu:
+
+```text
+1 - 100 ký tự
+```
+
+và chỉ gồm:
+
+```text
+A-Z
+a-z
+0-9
+-
+_
+.
+```
+
+Nếu không hợp lệ, server tự tạo GUID.
+
+API lỗi trả `ProblemDetails` có `correlationId`.
+
+Các secret/config quan trọng gồm:
+
+```text
+ConnectionStrings:DefaultConnection
+Jwt:SigningKey
+ActiveSession:RedisConnection
+```
+
+`appsettings.json` không chứa giá trị thật cho các secret này.
+
+Ứng dụng fail startup nếu các cấu hình bắt buộc như DB connection, Redis connection hoặc JWT signing key bị thiếu.
+
+Production cũng yêu cầu `AllowedHosts` phải là host cụ thể thay vì `*`.
+
+Chi tiết Application Log nằm trong `Application-Logging.md`.
 
 ## Security test tối thiểu
 
-- Sai login password ba lần tạo Identity lockout 15 phút; hết hạn tự mở và Admin có thể mở sớm.
-- Chỉ Admin được suspend/resume Customer; lý do là bắt buộc và thao tác phải revoke phiên cùng ghi audit.
-- Resume không xóa Identity lockout và clear Identity lockout không gỡ Admin suspension.
-- API quản lý không được target Teller/Admin và không có endpoint xóa Customer.
-- Teller bị `403` ở Admin endpoint; Admin bị `403` ở Teller Cash Deposit.
-- Customer A không truy cập được account/transaction của Customer B.
-- Refresh-token rotation, reuse, revoke; logout bằng cookie hiện hành và cookie cũ sau rotation đều phải thu hồi toàn family.
-- Session mới làm session cũ nhận `401` dù SignalR bị ngắt.
-- Session cũ không nhận `BalanceChanged` hoặc `TransactionReceived` sau khi bị thay thế.
-- SignalR reconnect dùng access token hiện hành, tự retry sau initial/closed failure và ngừng retry khi logout.
-- Tab cũ bootstrap không được revoke hoặc nhận nhầm session mới từ shared cookie.
-- Hai tab login/refresh/logout đồng thời không được làm response `Set-Cookie` cũ ghi đè cookie mới.
-- Logout khi cookie đã thuộc session khác chỉ revoke session của bearer cũ và giữ cookie session mới.
-- Logout mất mạng vẫn khóa UI; hidden Customer tab phải hết phiên ngay khi quay lại foreground.
-- Response protected request cũ sau khi session đổi không được cập nhật UI hoặc retry dưới session mới.
-- Duplicate transfer không chuyển tiền hai lần.
-- Concurrent transfer không double-spend.
-- AI không thực thi write tool hoặc arbitrary SQL.
+Repo hiện có automated test cho một số luồng bảo mật và giao dịch quan trọng.
 
-## Nội dung còn chờ bằng chứng
+`ActiveSessionMiddlewareTests` kiểm tra:
 
-- Threat model đã được con người review.
-- Cookie/CSRF behavior đã test trên browser thật.
-- Secret đã cấu hình trên provider.
-- HTTPS deployment đã kiểm chứng.
-- Penetration/security test result.
+```text
+active session được chấp nhận
+replaced session bị từ chối
+session dependency unavailable → fail closed
+```
 
-Các nội dung trên phải giữ trạng thái chờ cho đến khi có evidence thật.
+Integration tests hiện kiểm tra các luồng như:
+
+```text
+login → me → refresh → logout
+
+login lần hai
+→ access token của session cũ bị vô hiệu
+
+login lần hai
+→ ForceLogout tới session cũ
+
+sai password 3 lần
+→ Identity Lockout
+
+Admin unlock
+→ Customer login lại được
+
+anonymous
+→ protected API bị 401
+
+Customer
+→ Admin endpoint bị 403
+
+Customer
+→ Teller endpoint bị 403
+
+Customer A
+→ không đọc được account Customer B
+
+Transfer
+→ atomic
+→ audit
+→ idempotent
+
+Transfer lỗi
+→ rollback
+
+Concurrent Transfer
+→ không tạo negative balance
+
+Teller Cash Deposit
+→ atomic
+→ audit
+→ idempotent
+
+BankAccount RowVersion
+→ concurrency token
+```
+
+Các test này là automated test thực sự có trong repo hiện tại.
+
+## Nội dung chưa kiểm chứng
+
+Code hiện đã có cơ chế multi-tab, Web Locks, browser storage coordination và session restore protection.
+
+Chưa có browser E2E test riêng để kiểm chứng đầy đủ các trường hợp như:
+
+```text
+nhiều tab login đồng thời
+nhiều tab refresh đồng thời
+logout khi một tab khác vừa login
+mất mạng đúng lúc refresh/logout
+browser suspend và resume tab
+Web Locks behavior trên browser thật
+```
+
+Các nội dung Production sau cũng không thể được xác nhận chỉ từ source code:
+
+```text
+Production secret đã được cấu hình trên hosting provider
+HTTPS certificate thực tế đã hoạt động
+Redis Production đã kết nối thành công
+SQL Production đã backup/restore thành công
+penetration test thực tế
+```
+
+Các mục này chỉ nên được đánh dấu hoàn thành sau khi có deployment hoặc test evidence tương ứng.
