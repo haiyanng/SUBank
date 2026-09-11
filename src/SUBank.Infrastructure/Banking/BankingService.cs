@@ -115,7 +115,7 @@ public sealed class BankingService(
         BankingRules.ValidateIdempotencyKey(idempotencyKey);
         BankingRules.ValidateAccountNumber(request.SourceAccountNumber, "Tài khoản nguồn");
         BankingRules.ValidateAccountNumber(request.DestinationAccountNumber, "Tài khoản nhận");
-        BankingRules.ValidateAmount(request.Amount);
+        BankingRules.ValidateTransferAmount(request.Amount);
         BankingRules.ValidateTransactionPassword(request.TransactionPassword);
         var description = BankingRules.NormalizeDescription(request.Description);
         var user = await userManager.FindByIdAsync(userId)

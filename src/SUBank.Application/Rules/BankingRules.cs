@@ -33,6 +33,15 @@ public static class BankingRules
             throw new BusinessRuleException("Số tiền vượt quá giới hạn lưu trữ của hệ thống.");
     }
 
+    public static void ValidateTransferAmount(decimal amount)
+    {
+        ValidateAmount(amount);
+        if (amount < 1_000m)
+            throw new BusinessRuleException("Số tiền chuyển tối thiểu là 1.000 VND.");
+        if (amount > 100_000_000m)
+            throw new BusinessRuleException("Số tiền chuyển tối đa là 100.000.000 VND mỗi lần.");
+    }
+
     public static void ValidateCreditedBalance(decimal currentBalance, decimal amount)
     {
         if (currentBalance < 0 || currentBalance > MaximumMonetaryValue - amount)

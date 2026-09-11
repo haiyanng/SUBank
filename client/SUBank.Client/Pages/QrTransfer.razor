@@ -1,6 +1,7 @@
 @page "/qr"
 @inject ApiSession Session
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>QR · SUBank</PageTitle><div class="page-heading"><div><div class="eyebrow">QR nội bộ</div><h1 class="mb-1">QR</h1><p>Tạo mã nhận tiền hoặc quét ảnh để điền trước giao dịch.</p></div></div>
 @if (error is not null) { <div class="alert alert-danger">@error</div> }
@@ -31,7 +32,16 @@
     <div class="mb-2"><label class="form-label">Số tiền (tùy chọn)</label><InputNumber class="form-control" min="1" max="999999999999999999" step="1" @bind-Value="generateAmount" /></div>
     <div class="mb-3"><label class="form-label">Nội dung</label><input class="form-control" maxlength="280" @bind="generateMessage" /></div>
     <button class="btn btn-primary" disabled="@(busy || loadingAccounts || accounts.Count == 0)" @onclick="GenerateAsync">Tạo QR</button>
-    @if (generated is not null) { <div class="text-center mt-3"><img class="img-fluid" style="max-width:280px" alt="SUBank QR" src="data:image/png;base64,@generated.PngBase64" /><p class="small text-break">@generated.Payload</p></div> }
+    @if (generated is not null)
+    {
+        <div class="text-center mt-3">
+            <img class="img-fluid" style="max-width:280px" alt="SUBank QR" src="data:image/png;base64,@generated.PngBase64" />
+            <div class="mt-2">
+                <button type="button" class="btn btn-primary" disabled="@busy" @onclick="DownloadQrAsync">Tải QR</button>
+            </div>
+            <p class="small text-break mt-2">@generated.Payload</p>
+        </div>
+    }
 </div></div></div>
 <div class="col-12 col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
     <h2 class="h4">Quét QR chuyển tiền</h2>
@@ -81,6 +91,14 @@
     }
     private static string GetAccountOptionLabel(AccountSummary account)
         => $"{account.AccountNumber} · {account.Balance:N0} {account.Currency}";
+    private async Task DownloadQrAsync()
+    {
+        if (busy || generated is null) return;
+        var pngBase64 = generated.PngBase64;
+        await RunAsync(async () => await JS.InvokeVoidAsync(
+            "subankDownloadBase64", $"SUBank-QR-{generateAccount}.png", "image/png", pngBase64));
+    }
+
     private async Task GenerateAsync() { await RunAsync(async () => generated = await Session.GenerateQrAsync(new(generateAccount, generateAmount, generateMessage))); }
     private async Task UploadAsync(InputFileChangeEventArgs args) { await RunAsync(async () => { var file = args.File; await using var stream = file.OpenReadStream(MaxImageBytes); using var memory = new MemoryStream(); await stream.CopyToAsync(memory); decoded = await Session.DecodeQrAsync(memory.ToArray(), file.Name, file.ContentType); }); }
     private void ContinueTransfer() { if (decoded is null) return; var amount = decoded.Amount?.ToString("0", CultureInfo.InvariantCulture) ?? ""; Navigation.NavigateTo($"/transfer?destination={Uri.EscapeDataString(decoded.AccountNumber)}&amount={amount}&description={Uri.EscapeDataString(decoded.Message ?? "")}"); }

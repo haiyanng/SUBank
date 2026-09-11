@@ -37,7 +37,7 @@ else
         <div class="col-lg-7">
             <div class="card">
                 <div class="card-body p-lg-4">
-                    <EditForm Model="model" OnValidSubmit="SubmitAsync">
+                    <EditForm @ref="transferForm" Model="model" OnValidSubmit="SubmitAsync">
                         <DataAnnotationsValidator />
 
                         <div class="mb-3">
@@ -80,11 +80,29 @@ else
 
                         <div class="mb-3">
                             <label class="form-label" for="amount">Số tiền (VND)</label>
-                            <InputNumber id="amount" class="form-control form-control-lg money"
-                                         min="1" max="999999999999999999" step="1"
+                            <InputNumber id="amount" class="@(HasInsufficientBalance ? "form-control form-control-lg money is-invalid" : "form-control form-control-lg money")"
+                                         aria-invalid="@(HasInsufficientBalance ? "true" : null)"
+                                         min="1000" max="100000000" step="1"
                                          ParsingErrorMessage="Vui lòng điền số tiền."
-                                         @bind-Value="model.Amount" />
+                                         @bind-Value="model.Amount" @oninput="UpdateAmountSuggestions" />
                             <ValidationMessage For="@(() => model.Amount)" />
+                            @if (HasInsufficientBalance)
+                            {
+                                <div class="text-danger mt-1" role="alert">Số dư không đủ.</div>
+                            }
+                            @if (amountSuggestions.Count > 0)
+                            {
+                                <div class="d-flex flex-wrap gap-2 mt-2" role="group" aria-label="Gợi ý số tiền">
+                                    @foreach (var amount in amountSuggestions)
+                                    {
+                                        <button type="button" class="btn btn-outline-primary btn-sm"
+                                                disabled="@busy" @onclick="() => SelectAmount(amount)">
+                                            @amount.ToString("N0", CultureInfo.GetCultureInfo("vi-VN")) VND
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            <div class="form-text">Số tiền chuyển từ 1.000 đến 100.000.000 VND mỗi lần.</div>
                         </div>
 
                         <div class="mb-3">
@@ -108,7 +126,7 @@ else
                         }
 
                         <button class="btn btn-primary btn-lg w-100"
-                                disabled="@(busy || resolvingDestination || !IsDestinationResolved)">
+                                disabled="@(busy || resolvingDestination || !IsDestinationResolved || HasInsufficientBalance)">
                             @(busy ? "Đang xử lý..." : "Xác nhận chuyển tiền")
                         </button>
                     </EditForm>
@@ -146,6 +164,12 @@ else
 
     private readonly List<AccountSummary> accounts = [];
     private readonly FormModel model = new();
+    private EditForm? transferForm;
+    private readonly List<decimal> amountSuggestions = [];
+    private decimal? enteredAmount;
+    private bool HasInsufficientBalance =>
+        accounts.FirstOrDefault(x => x.AccountNumber == model.Source) is { } source &&
+        (enteredAmount ?? model.Amount) > source.Balance;
     private readonly IdempotencyIntentTracker<TransferIntent> idempotencyIntent = new();
     private string? accountLoadError;
     private ResolvedAccount? resolvedDestination;
@@ -166,11 +190,20 @@ else
 
     protected override Task OnInitializedAsync() => LoadAccountsAsync();
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
+        var destinationChanged = !string.IsNullOrWhiteSpace(Destination) &&
+            !string.Equals(model.Destination, Destination.Trim(), StringComparison.Ordinal);
         if (!string.IsNullOrWhiteSpace(Destination)) model.Destination = Destination.Trim();
-        if (Amount is not null) model.Amount = Amount.Value;
+        if (Amount is not null)
+        {
+            model.Amount = Amount.Value;
+            enteredAmount = null;
+        }
         if (Description is not null) model.Description = Description;
+
+        if (destinationChanged && !loadingAccounts && accountLoadError is null && accounts.Count > 0)
+            await ResolveDestinationAsync();
     }
 
     private async Task LoadAccountsAsync()
@@ -180,6 +213,8 @@ else
         try
         {
             await RefreshAccountsAsync(Source);
+            if (!string.IsNullOrWhiteSpace(model.Destination))
+                await ResolveDestinationAsync();
         }
         catch (Exception exception)
         {
@@ -206,7 +241,7 @@ else
 
     private async Task SubmitAsync()
     {
-        if (busy) return;
+        if (busy || HasInsufficientBalance) return;
 
         if (!IsDestinationResolved)
         {
@@ -230,6 +265,8 @@ else
             idempotencyIntent.Complete();
             model.Destination = string.Empty;
             model.Amount = 0;
+            enteredAmount = null;
+            amountSuggestions.Clear();
             model.Description = null;
             ResetDestinationResolution();
             success = true;
@@ -254,6 +291,30 @@ else
             model.TransactionPassword = string.Empty;
             busy = false;
         }
+    }
+
+    private void UpdateAmountSuggestions(ChangeEventArgs args)
+    {
+        enteredAmount = decimal.TryParse(args.Value?.ToString(), NumberStyles.Float,
+            CultureInfo.InvariantCulture, out var value) ? value : 0m;
+        amountSuggestions.Clear();
+        if (!decimal.TryParse(args.Value?.ToString(), NumberStyles.None, CultureInfo.InvariantCulture, out var amount)
+            || amount <= 0)
+            return;
+
+        foreach (var multiplier in new[] { 10_000m, 100_000m, 1_000_000m })
+        {
+            if (amount <= 999_999_999_999_999_999m / multiplier)
+                amountSuggestions.Add(amount * multiplier);
+        }
+    }
+
+    private void SelectAmount(decimal amount)
+    {
+        model.Amount = amount;
+        enteredAmount = null;
+        amountSuggestions.Clear();
+        transferForm?.EditContext?.NotifyFieldChanged(new FieldIdentifier(model, nameof(FormModel.Amount)));
     }
 
     private void ResetDestinationResolution()
@@ -313,20 +374,10 @@ else
     private static bool IsAccountNumber(string value) =>
         value.Length == 10 && value.All(char.IsAsciiDigit);
 
-    private void SourceChanged()
+    private async Task SourceChanged()
     {
-        if (!string.Equals(
-                (model.Destination ?? string.Empty).Trim(),
-                (model.Source ?? string.Empty).Trim(),
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        Interlocked.Increment(ref destinationLookupVersion);
-        resolvedDestination = null;
-        resolvingDestination = false;
-        destinationLookupError = "Tài khoản nhận phải khác tài khoản nguồn.";
+        if (!string.IsNullOrWhiteSpace(model.Destination))
+            await ResolveDestinationAsync();
     }
 
     private sealed record TransferIntent(
@@ -355,9 +406,13 @@ else
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (Amount < 1m || Amount > 999_999_999_999_999_999m)
+            if (Amount < 1_000m)
                 yield return new ValidationResult(
-                    "Số tiền phải từ 1 đến 999.999.999.999.999.999 VND.",
+                    "Số tiền chuyển tối thiểu là 1.000 VND.",
+                    [nameof(Amount)]);
+            else if (Amount > 100_000_000m)
+                yield return new ValidationResult(
+                    "Số tiền chuyển tối đa là 100.000.000 VND mỗi lần.",
                     [nameof(Amount)]);
             else if (decimal.Truncate(Amount) != Amount)
                 yield return new ValidationResult(

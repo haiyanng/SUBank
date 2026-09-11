@@ -6,6 +6,24 @@ namespace SUBank.Application.Tests;
 public sealed class BankingRulesTests
 {
     [Theory]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    [InlineData(100000000)]
+    public void ValidateTransferAmount_AcceptsWholeVndWithinLimits(decimal amount) =>
+        BankingRules.ValidateTransferAmount(amount);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(999)]
+    [InlineData(100000001)]
+    public void ValidateTransferAmount_RejectsAmountOutsideLimits(decimal amount) =>
+        Assert.Throws<BusinessRuleException>(() => BankingRules.ValidateTransferAmount(amount));
+
+    [Fact]
+    public void ValidateTransferAmount_RejectsFractionalVnd() =>
+        Assert.Throws<BusinessRuleException>(() => BankingRules.ValidateTransferAmount(1001.5m));
+
+    [Theory]
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(1.01)]
