@@ -1,0 +1,158 @@
+erDiagram
+    direction LR
+
+    aspNetRoles ||--o{ aspNetRoleClaims : co
+    aspNetUsers ||--o{ aspNetUserClaims : co
+    aspNetUsers ||--o{ aspNetUserLogins : co
+    aspNetUsers ||--o{ aspNetUserRoles : duoc_gan
+    aspNetRoles ||--o{ aspNetUserRoles : duoc_gan
+    aspNetUsers ||--o{ aspNetUserTokens : so_huu
+
+    aspNetUsers ||--o| customerProfiles : co
+    customerProfiles ||--o{ bankAccounts : so_huu
+    aspNetUsers ||--o{ financialTransactions : tao
+    bankAccounts o|--o{ financialTransactions : tai_khoan_nguon
+    bankAccounts ||--o{ financialTransactions : tai_khoan_nhan
+    aspNetUsers o|--o{ auditLogs : tac_nhan
+    aspNetUsers ||--o{ refreshTokens : so_huu
+    refreshTokens o|--o{ refreshTokens : thay_the
+    aspNetUsers ||--o{ userSessions : so_huu
+
+    aspNetUsers["AspNetUsers"] {
+        string Id PK "nvarchar(450)"
+        string UserName "nvarchar(256), cho phép null"
+        string NormalizedUserName UK "nvarchar(256), cho phép null, unique có filter"
+        string Email "nvarchar(256), cho phép null"
+        string NormalizedEmail "nvarchar(256), cho phép null, có index"
+        bool EmailConfirmed "bit"
+        string PasswordHash "nvarchar(max), cho phép null"
+        string SecurityStamp "nvarchar(max), cho phép null"
+        string ConcurrencyStamp "nvarchar(max), cho phép null"
+        string PhoneNumber "nvarchar(max), cho phép null"
+        bool PhoneNumberConfirmed "bit"
+        bool TwoFactorEnabled "bit"
+        datetimeoffset LockoutEnd "cho phép null"
+        bool LockoutEnabled "bit"
+        int AccessFailedCount "int"
+        string TransactionPasswordHash "nvarchar(500), cho phép null"
+        datetimeoffset LockedAtUtc "cho phép null"
+        bool IsAdminSuspended "bit, mặc định false"
+        datetimeoffset AdminSuspendedAtUtc "cho phép null"
+        string AdminSuspensionReason "nvarchar(500), cho phép null"
+        string AdminSuspendedByUserId "nvarchar(450), cho phép null, không FK"
+        bool IsActive "bit, mặc định true"
+        datetimeoffset CreatedAtUtc "bắt buộc"
+    }
+
+    aspNetRoles["AspNetRoles"] {
+        string Id PK "nvarchar(450)"
+        string Name "nvarchar(256), cho phép null"
+        string NormalizedName UK "nvarchar(256), cho phép null, unique có filter"
+        string ConcurrencyStamp "nvarchar(max), cho phép null"
+    }
+
+    aspNetRoleClaims["AspNetRoleClaims"] {
+        int Id PK "identity"
+        string RoleId FK "nvarchar(450), CASCADE"
+        string ClaimType "nvarchar(max), cho phép null"
+        string ClaimValue "nvarchar(max), cho phép null"
+    }
+
+    aspNetUserClaims["AspNetUserClaims"] {
+        int Id PK "identity"
+        string UserId FK "nvarchar(450), CASCADE"
+        string ClaimType "nvarchar(max), cho phép null"
+        string ClaimValue "nvarchar(max), cho phép null"
+    }
+
+    aspNetUserLogins["AspNetUserLogins"] {
+        string LoginProvider PK "nvarchar(450)"
+        string ProviderKey PK "nvarchar(450)"
+        string ProviderDisplayName "nvarchar(max), cho phép null"
+        string UserId FK "nvarchar(450), CASCADE"
+    }
+
+    aspNetUserRoles["AspNetUserRoles"] {
+        string UserId PK, FK "nvarchar(450), CASCADE"
+        string RoleId PK, FK "nvarchar(450), CASCADE"
+    }
+
+    aspNetUserTokens["AspNetUserTokens"] {
+        string UserId PK, FK "nvarchar(450), CASCADE"
+        string LoginProvider PK "nvarchar(450)"
+        string Name PK "nvarchar(450)"
+        string Value "nvarchar(max), cho phép null"
+    }
+
+    customerProfiles["CustomerProfiles"] {
+        bigint Id PK "identity"
+        string UserId FK, UK "nvarchar(450), RESTRICT"
+        string FullName "nvarchar(150)"
+        date DateOfBirth "date"
+        string IdentityCardNumber UK "varchar(20)"
+        string Phone UK "varchar(20)"
+        string Email UK "nvarchar(254)"
+        string PermanentAddress "nvarchar(500)"
+        string TemporaryAddress "nvarchar(500), cho phép null"
+        datetimeoffset CreatedAtUtc "bắt buộc"
+        datetimeoffset UpdatedAtUtc "cho phép null"
+    }
+
+    bankAccounts["BankAccounts"] {
+        bigint Id PK "identity"
+        bigint CustomerProfileId FK "RESTRICT"
+        string AccountNumber UK "varchar(10)"
+        decimal Balance "decimal(18,0), ràng buộc Balance >= 0"
+        string Currency "char(3), ràng buộc VND"
+        string Status "nvarchar(20)"
+        bytes RowVersion "rowversion, token đồng thời"
+        datetimeoffset CreatedAtUtc "bắt buộc"
+    }
+
+    financialTransactions["FinancialTransactions"] {
+        bigint Id PK "identity"
+        string ReferenceNo UK "varchar(30)"
+        bigint SourceAccountId FK "cho phép null, RESTRICT"
+        bigint DestinationAccountId FK "bắt buộc, RESTRICT"
+        string CreatedByUserId FK "nvarchar(450), RESTRICT"
+        string Type "nvarchar(20)"
+        decimal Amount "decimal(18,0), ràng buộc Amount > 0"
+        string Description "nvarchar(280), cho phép null"
+        string IdempotencyKey "varchar(64), unique ghép với CreatedByUserId"
+        string RequestHash "char(64)"
+        datetimeoffset CreatedAtUtc "bắt buộc"
+    }
+
+    auditLogs["AuditLogs"] {
+        bigint Id PK "identity"
+        string UserId FK "nvarchar(450), cho phép null, SET NULL"
+        string Action "varchar(80)"
+        string EntityType "varchar(80), cho phép null, tham chiếu logic"
+        string EntityId "nvarchar(100), cho phép null, không FK"
+        string Result "nvarchar(20)"
+        string IpAddress "varchar(45), cho phép null"
+        string CorrelationId "varchar(100), cho phép null"
+        string Details "nvarchar(1000), cho phép null"
+        datetimeoffset CreatedAtUtc "bắt buộc, có index"
+    }
+
+    refreshTokens["RefreshTokens"] {
+        bigint Id PK "identity"
+        string UserId FK "nvarchar(450), CASCADE"
+        string SessionId "varchar(64), chỉ liên kết logic, không FK"
+        string TokenHash UK "char(64)"
+        datetimeoffset ExpiresAtUtc "bắt buộc"
+        datetimeoffset RevokedAtUtc "cho phép null"
+        datetimeoffset CreatedAtUtc "bắt buộc"
+        bigint ReplacedByTokenId FK "cho phép null, FK tự tham chiếu, NO ACTION"
+    }
+
+    userSessions["UserSessions"] {
+        bigint Id PK "identity"
+        string UserId FK "nvarchar(450), CASCADE"
+        string SessionId "varchar(64), unique ghép với UserId"
+        datetimeoffset CreatedAtUtc "bắt buộc"
+        datetimeoffset ExpiresAtUtc "bắt buộc"
+        datetimeoffset RevokedAtUtc "cho phép null"
+        string RevocationReason "varchar(50), cho phép null"
+    }

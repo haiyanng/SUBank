@@ -1,0 +1,88 @@
+@page "/qr"
+@inject ApiSession Session
+@inject NavigationManager Navigation
+
+<PageTitle>QR · SUBank</PageTitle><div class="page-heading"><div><div class="eyebrow">QR nội bộ</div><h1 class="mb-1">QR</h1><p>Tạo mã nhận tiền hoặc quét ảnh để điền trước giao dịch.</p></div></div>
+@if (error is not null) { <div class="alert alert-danger">@error</div> }
+<div class="row g-4"><div class="col-12 col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h4">Tạo QR nhận tiền</h2>
+    <div class="mb-2">
+        <label class="form-label" for="receive-account">Tài khoản nhận tiền</label>
+        @if (loadingAccounts)
+        {
+            <div class="form-control text-body-secondary" role="status">Đang tải tài khoản...</div>
+        }
+        else if (accounts.Count == 0)
+        {
+            <div class="alert alert-warning mb-0">Không có tài khoản đang hoạt động để tạo QR.</div>
+        }
+        else
+        {
+            <select id="receive-account" class="form-select" value="@generateAccount"
+                    disabled="@busy" @onchange="SelectGenerateAccount">
+                @foreach (var account in accounts)
+                {
+                    <option value="@account.AccountNumber">@GetAccountOptionLabel(account)</option>
+                }
+            </select>
+            <div class="form-text">Tiền chuyển qua QR sẽ được nhận vào tài khoản này.</div>
+        }
+    </div>
+    <div class="mb-2"><label class="form-label">Số tiền (tùy chọn)</label><InputNumber class="form-control" min="1" max="999999999999999999" step="1" @bind-Value="generateAmount" /></div>
+    <div class="mb-3"><label class="form-label">Nội dung</label><input class="form-control" maxlength="280" @bind="generateMessage" /></div>
+    <button class="btn btn-primary" disabled="@(busy || loadingAccounts || accounts.Count == 0)" @onclick="GenerateAsync">Tạo QR</button>
+    @if (generated is not null) { <div class="text-center mt-3"><img class="img-fluid" style="max-width:280px" alt="SUBank QR" src="data:image/png;base64,@generated.PngBase64" /><p class="small text-break">@generated.Payload</p></div> }
+</div></div></div>
+<div class="col-12 col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h4">Quét QR chuyển tiền</h2>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <label for="qr-camera-input" class="btn btn-primary @(busy ? "disabled" : null)"
+               role="button" aria-disabled="@busy">Quét</label>
+        <InputFile id="qr-camera-input" class="visually-hidden" disabled="@busy"
+                   OnChange="UploadAsync" accept="image/*" capture="environment" />
+
+        <label for="qr-image-input" class="btn btn-primary @(busy ? "disabled" : null)"
+               role="button" aria-disabled="@busy">Tải ảnh</label>
+        <InputFile id="qr-image-input" class="visually-hidden" disabled="@busy"
+                   OnChange="UploadAsync" accept="image/png,image/jpeg,image/webp" />
+    </div>
+    @if (decoded is not null) { <div class="alert alert-success mt-3"><div>Tài khoản: <strong>@decoded.AccountNumber</strong></div><div>Số tiền: @(decoded.Amount?.ToString("N0") ?? "Chưa nhập")</div><div>Nội dung: @decoded.Message</div><button class="btn btn-success mt-2" @onclick="ContinueTransfer">Tiếp tục chuyển tiền</button></div> }
+</div></div></div></div>
+@code {
+    [SupplyParameterFromQuery(Name = "account")] public string? Account { get; set; }
+    private const long MaxImageBytes = 5 * 1024 * 1024;
+    private readonly List<AccountSummary> accounts = [];
+    private string generateAccount = ""; private decimal? generateAmount; private string? generateMessage;
+    private GeneratedQr? generated; private QrTransferData? decoded; private string? error; private bool busy; private bool loadingAccounts = true;
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var loadedAccounts = await Session.GetAccountsAsync() ?? [];
+            accounts.AddRange(loadedAccounts.Where(x => string.Equals(x.Status, "Active", StringComparison.OrdinalIgnoreCase)));
+            generateAccount = accounts.FirstOrDefault(x => x.AccountNumber == Account)?.AccountNumber
+                ?? accounts.FirstOrDefault(x => x.IsPrimary)?.AccountNumber
+                ?? accounts.FirstOrDefault()?.AccountNumber
+                ?? "";
+        }
+        catch (Exception exception)
+        {
+            error = ClientErrorMessage.From(exception);
+        }
+        finally
+        {
+            loadingAccounts = false;
+        }
+    }
+    private void SelectGenerateAccount(ChangeEventArgs args)
+    {
+        generateAccount = args.Value?.ToString() ?? "";
+        generated = null;
+    }
+    private static string GetAccountOptionLabel(AccountSummary account)
+        => $"{account.AccountNumber} · {account.Balance:N0} {account.Currency}";
+    private async Task GenerateAsync() { await RunAsync(async () => generated = await Session.GenerateQrAsync(new(generateAccount, generateAmount, generateMessage))); }
+    private async Task UploadAsync(InputFileChangeEventArgs args) { await RunAsync(async () => { var file = args.File; await using var stream = file.OpenReadStream(MaxImageBytes); using var memory = new MemoryStream(); await stream.CopyToAsync(memory); decoded = await Session.DecodeQrAsync(memory.ToArray(), file.Name, file.ContentType); }); }
+    private void ContinueTransfer() { if (decoded is null) return; var amount = decoded.Amount?.ToString("0", CultureInfo.InvariantCulture) ?? ""; Navigation.NavigateTo($"/transfer?destination={Uri.EscapeDataString(decoded.AccountNumber)}&amount={amount}&description={Uri.EscapeDataString(decoded.Message ?? "")}"); }
+    private async Task RunAsync(Func<Task> action) { busy = true; error = null; try { await action(); } catch (Exception exception) { error = exception.Message; } finally { busy = false; } }
+}

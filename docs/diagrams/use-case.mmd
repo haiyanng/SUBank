@@ -1,0 +1,65 @@
+flowchart LR
+    %% Mermaid không có cú pháp UML Use Case riêng, nên dùng flowchart với biên hệ thống
+    customer["Khách hàng"]
+    teller["Giao dịch viên"]
+    admin["Quản trị viên"]
+
+    subgraph systemBoundary["Hệ thống SUBank 3S"]
+        login(["Đăng nhập"])
+        logout(["Đăng xuất"])
+        resolveAccount(["Tra cứu tài khoản nhận"])
+
+        subgraph customerCases["Nghiệp vụ khách hàng"]
+            viewAccounts(["Xem tài khoản và số dư"])
+            transfer(["Chuyển tiền nội bộ"])
+            qr(["Tạo hoặc đọc QR nội bộ"])
+            transactions(["Xem lịch sử và chi tiết giao dịch"])
+            statements(["Xem và tải sao kê PDF"])
+            profile(["Xem thông tin cá nhân"])
+            aiPlaceholder(["Mở trang AI hỗ trợ<br/>(chưa triển khai)"])
+        end
+
+        subgraph tellerCases["Nghiệp vụ giao dịch viên"]
+            cashDeposit(["Nộp tiền mặt vào tài khoản"])
+        end
+
+        subgraph adminCases["Nghiệp vụ quản trị viên"]
+            manageCustomers(["Tìm kiếm và xem Customer"])
+            suspendCustomer(["Khóa hoặc mở khóa thủ công"])
+            unlockIdentity(["Mở Identity Lockout"])
+            viewAudit(["Xem Audit Log"])
+        end
+    end
+
+    customer --> login
+    customer --> logout
+    customer --> viewAccounts
+    customer --> transfer
+    customer --> qr
+    customer --> transactions
+    customer --> statements
+    customer --> profile
+    customer --> aiPlaceholder
+    customer --> resolveAccount
+
+    teller --> login
+    teller --> logout
+    teller --> cashDeposit
+    teller --> resolveAccount
+
+    admin --> login
+    admin --> logout
+    admin --> manageCustomers
+    admin --> suspendCustomer
+    admin --> unlockIdentity
+    admin --> viewAudit
+
+    transfer -. "bao gồm" .-> resolveAccount
+    cashDeposit -. "bao gồm" .-> resolveAccount
+
+    classDef actor fill:#111111,stroke:#111111,color:#FFFFFF;
+    classDef usecase fill:#F8F1E2,stroke:#B88A2A,color:#111111;
+    classDef placeholder fill:#F5F5F5,stroke:#888888,stroke-dasharray:5 5,color:#555555;
+    class customer,teller,admin actor;
+    class login,logout,resolveAccount,viewAccounts,transfer,qr,transactions,statements,profile,cashDeposit,manageCustomers,suspendCustomer,unlockIdentity,viewAudit usecase;
+    class aiPlaceholder placeholder;

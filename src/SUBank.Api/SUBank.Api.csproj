@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SUBank.Application\SUBank.Application.csproj" />
+    <ProjectReference Include="..\SUBank.Infrastructure\SUBank.Infrastructure.csproj" />
+    <ProjectReference Include="..\SUBank.Contracts\SUBank.Contracts.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <SUBankClientProject>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../client/SUBank.Client/SUBank.Client.csproj'))</SUBankClientProject>
+    <SUBankClientPublishDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/obj/$(Configuration)/$(TargetFramework)/subank-client-publish/'))</SUBankClientPublishDirectory>
+  </PropertyGroup>
+
+  <Target Name="PublishSUBankClient" BeforeTargets="ComputeFilesToPublish">
+    <RemoveDir Directories="$(SUBankClientPublishDirectory)" />
+    <MSBuild Projects="$(SUBankClientProject)"
+             Targets="Restore;Publish"
+             Properties="Configuration=$(Configuration);PublishDir=$(SUBankClientPublishDirectory)"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishSingleFile" />
+    <ItemGroup>
+      <SUBankClientPublishedFile Include="$(SUBankClientPublishDirectory)wwwroot/**/*" />
+      <ResolvedFileToPublish Include="@(SUBankClientPublishedFile)"
+                             RelativePath="wwwroot/%(RecursiveDir)%(Filename)%(Extension)"
+                             CopyToPublishDirectory="PreserveNewest"
+                             ExcludeFromSingleFile="true" />
+    </ItemGroup>
+  </Target>
+
+</Project>

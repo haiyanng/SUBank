@@ -1,0 +1,75 @@
+flowchart TD
+    start(["Bắt đầu"])
+
+    subgraph clientFlow["SUBank.Client"]
+        loadAccounts["Tải tài khoản nguồn"]
+        enterDestination["Nhập tài khoản nhận"]
+        leaveField["Rời ô bằng click hoặc Tab"]
+        validDestination{"Đúng 10 chữ số?"}
+        sameAccount{"Trùng tài khoản nguồn?"}
+        resolveAccount["Gọi API tra cứu tài khoản"]
+        accountFound{"Tìm thấy tài khoản?"}
+        showAccountError["Hiện lỗi tài khoản nhận"]
+        showRecipient["Hiện tên người nhận"]
+        enterTransfer["Nhập số tiền nguyên VND,<br/>nội dung và mật khẩu giao dịch"]
+        clientValid{"Form hợp lệ?"}
+        submitTransfer["Gửi JWT, Idempotency-Key<br/>và yêu cầu chuyển tiền"]
+        showError["Hiện lỗi từ ProblemDetails"]
+        refreshUi["Tải lại số dư và lịch sử,<br/>sau đó xóa dữ liệu form"]
+    end
+
+    subgraph apiFlow["SUBank.Api và SUBank.Infrastructure"]
+        requestAllowed{"JWT, phiên, role,<br/>rate limit và key hợp lệ?"}
+        businessValid{"Dữ liệu và trạng thái<br/>người dùng hợp lệ?"}
+        replayFound{"Đã có idempotency key?"}
+        samePayload{"Cùng nội dung yêu cầu?"}
+        returnReplay["Trả kết quả cũ<br/>Replayed = true"]
+        verifyPassword{"Mật khẩu giao dịch đúng?"}
+        beginTransaction["Mở SQL transaction<br/>và tải hai tài khoản"]
+        accountsValid{"Quyền sở hữu, trạng thái,<br/>số dư và giới hạn hợp lệ?"}
+        updateData["Trừ nguồn, cộng đích,<br/>thêm giao dịch và Audit Log"]
+        saveSucceeded{"SaveChanges thành công?"}
+        rollback["Rollback và kiểm tra<br/>replay đồng thời"]
+        concurrentReplay{"Tìm thấy replay hợp lệ?"}
+        commit["Commit SQL transaction"]
+        sendRealtime["Gửi SignalR best-effort<br/>sau khi commit"]
+    end
+
+    finish(["Kết thúc"])
+
+    start --> loadAccounts --> enterDestination --> leaveField --> validDestination
+    validDestination -->|"Không"| showAccountError
+    showAccountError --> enterDestination
+    validDestination -->|"Có"| sameAccount
+    sameAccount -->|"Có"| showAccountError
+    sameAccount -->|"Không"| resolveAccount --> accountFound
+    accountFound -->|"Không"| showAccountError
+    accountFound -->|"Có"| showRecipient --> enterTransfer --> clientValid
+    clientValid -->|"Không"| enterTransfer
+    clientValid -->|"Có"| submitTransfer --> requestAllowed
+
+    requestAllowed -->|"Không"| showError
+    requestAllowed -->|"Có"| businessValid
+    businessValid -->|"Không"| showError
+    businessValid -->|"Có"| replayFound
+    replayFound -->|"Có"| samePayload
+    samePayload -->|"Không"| showError
+    samePayload -->|"Có"| returnReplay --> refreshUi
+    replayFound -->|"Không"| verifyPassword
+    verifyPassword -->|"Không"| showError
+    verifyPassword -->|"Có"| beginTransaction --> accountsValid
+    accountsValid -->|"Không"| showError
+    accountsValid -->|"Có"| updateData --> saveSucceeded
+    saveSucceeded -->|"Không"| rollback --> concurrentReplay
+    concurrentReplay -->|"Không"| showError
+    concurrentReplay -->|"Có"| returnReplay
+    saveSucceeded -->|"Có"| commit --> sendRealtime --> refreshUi
+    refreshUi --> finish
+    showError --> finish
+
+    classDef action fill:#FFFFFF,stroke:#555555,color:#111111;
+    classDef decision fill:#F8F1E2,stroke:#B88A2A,color:#111111;
+    classDef terminal fill:#111111,stroke:#111111,color:#FFFFFF;
+    class loadAccounts,enterDestination,leaveField,resolveAccount,showAccountError,showRecipient,enterTransfer,submitTransfer,showError,refreshUi,returnReplay,beginTransaction,updateData,rollback,commit,sendRealtime action;
+    class validDestination,sameAccount,accountFound,clientValid,requestAllowed,businessValid,replayFound,samePayload,verifyPassword,accountsValid,saveSucceeded,concurrentReplay decision;
+    class start,finish terminal;

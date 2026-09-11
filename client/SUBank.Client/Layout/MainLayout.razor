@@ -1,0 +1,19 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <NavMenu />
+
+    <div class="app-workspace">
+        <main class="app-main">
+            <article class="content-container">
+                <RealtimeStatus />
+                @Body
+            </article>
+        </main>
+
+        <footer class="app-footer">
+            <span>© @DateTime.UtcNow.Year SUBank · Sản phẩm mô phỏng phục vụ học tập</span>
+            <span>Không kết nối hệ thống ngân hàng thật</span>
+        </footer>
+    </div>
+</div>
