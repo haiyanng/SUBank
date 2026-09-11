@@ -1,0 +1,76 @@
+flowchart LR
+    customer["Khách hàng"]
+    teller["Giao dịch viên"]
+    admin["Quản trị viên"]
+
+    subgraph systemBoundary["Hệ thống SUBank 3S"]
+        direction TB
+        auth(["1.0 Xác thực và quản lý phiên"])
+        accountProfile(["2.0 Tài khoản và hồ sơ"])
+        transferQr(["3.0 Chuyển tiền và QR"])
+        historyStatement(["4.0 Giao dịch và sao kê"])
+        tellerDeposit(["5.0 Nộp tiền tại quầy"])
+        customerAdmin(["6.0 Quản lý Customer và Audit"])
+        realtime(["7.0 Thông báo thời gian thực"])
+
+        users[("D1 AspNetUsers và CustomerProfiles")]
+        banking[("D2 BankAccounts và FinancialTransactions")]
+        sessions[("D3 RefreshTokens và UserSessions")]
+        audit[("D4 AuditLogs")]
+        activeSession[("D5 Redis Active Session")]
+    end
+
+    customer -->|"Thông tin đăng nhập"| auth
+    auth -->|"JWT và trạng thái phiên"| customer
+    teller -->|"Thông tin đăng nhập"| auth
+    auth -->|"JWT và trạng thái phiên"| teller
+    admin -->|"Thông tin đăng nhập"| auth
+    auth -->|"JWT và trạng thái phiên"| admin
+
+    customer -->|"Yêu cầu tài khoản hoặc hồ sơ"| accountProfile
+    accountProfile -->|"Thông tin tài khoản, số dư và hồ sơ"| customer
+    customer -->|"Yêu cầu chuyển tiền hoặc QR"| transferQr
+    transferQr -->|"Tên người nhận, QR và kết quả chuyển tiền"| customer
+    customer -->|"Điều kiện tìm kiếm hoặc kỳ sao kê"| historyStatement
+    historyStatement -->|"Lịch sử, chi tiết và PDF"| customer
+
+    teller -->|"Tài khoản, số tiền và nội dung nộp"| tellerDeposit
+    tellerDeposit -->|"Tên khách hàng và kết quả giao dịch"| teller
+
+    admin -->|"Tìm kiếm, khóa hoặc mở khóa Customer"| customerAdmin
+    customerAdmin -->|"Danh sách, chi tiết và Audit Log"| admin
+
+    auth <-->|"Người dùng và thông tin khóa"| users
+    auth <-->|"Refresh token và phiên bền vững"| sessions
+    auth <-->|"SessionId đang hoạt động"| activeSession
+
+    accountProfile <-->|"Hồ sơ và quyền sở hữu"| users
+    accountProfile <-->|"Tài khoản và số dư"| banking
+
+    transferQr <-->|"Người dùng và mật khẩu giao dịch"| users
+    transferQr <-->|"Tài khoản và giao dịch"| banking
+    transferQr -->|"Kết quả nghiệp vụ"| audit
+    transferQr -->|"Giao dịch đã commit"| realtime
+
+    historyStatement <-->|"Dữ liệu tài khoản và giao dịch"| banking
+
+    tellerDeposit <-->|"Customer và trạng thái người dùng"| users
+    tellerDeposit <-->|"Số dư và giao dịch nộp tiền"| banking
+    tellerDeposit -->|"Kết quả nghiệp vụ"| audit
+    tellerDeposit -->|"Giao dịch đã commit"| realtime
+
+    customerAdmin <-->|"Customer và trạng thái khóa"| users
+    customerAdmin -->|"Thu hồi phiên hoặc token"| sessions
+    customerAdmin <-->|"Bản ghi kiểm toán"| audit
+    customerAdmin -->|"Xóa phiên đang hoạt động"| activeSession
+    customerAdmin -->|"Yêu cầu buộc đăng xuất"| realtime
+
+    realtime <-->|"Tìm phiên nhận sự kiện"| activeSession
+    realtime -->|"Cập nhật số dư, giao dịch hoặc buộc đăng xuất"| customer
+
+    classDef actor fill:#FFFFFF,stroke:#444444,color:#111111;
+    classDef process fill:#F8F1E2,stroke:#B88A2A,color:#111111;
+    classDef store fill:#EFEFEF,stroke:#666666,color:#111111;
+    class customer,teller,admin actor;
+    class auth,accountProfile,transferQr,historyStatement,tellerDeposit,customerAdmin,realtime process;
+    class users,banking,sessions,audit,activeSession store;

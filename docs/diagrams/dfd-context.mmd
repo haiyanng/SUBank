@@ -1,0 +1,20 @@
+flowchart LR
+    %% DFD Context: toàn bộ SUBank được biểu diễn bằng một tiến trình duy nhất
+    customer["Khách hàng"]
+    teller["Giao dịch viên"]
+    admin["Quản trị viên"]
+    subank(["0. Hệ thống SUBank 3S"])
+
+    customer -->|"Thông tin đăng nhập, yêu cầu tài khoản, chuyển tiền, QR và sao kê"| subank
+    subank -->|"Phiên đăng nhập, số dư, kết quả giao dịch, lịch sử và sao kê"| customer
+
+    teller -->|"Thông tin đăng nhập, tài khoản cần tra cứu và yêu cầu nộp tiền"| subank
+    subank -->|"Tên khách hàng và kết quả nộp tiền"| teller
+
+    admin -->|"Thông tin đăng nhập, điều kiện tìm kiếm và lệnh khóa hoặc mở khóa"| subank
+    subank -->|"Danh sách Customer, chi tiết trạng thái và Audit Log"| admin
+
+    classDef actor fill:#FFFFFF,stroke:#444444,color:#111111;
+    classDef process fill:#F8F1E2,stroke:#B88A2A,stroke-width:2px,color:#111111;
+    class customer,teller,admin actor;
+    class subank process;

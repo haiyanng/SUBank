@@ -1,0 +1,65 @@
+flowchart LR
+    sender["Khách hàng gửi"]
+    recipient["Khách hàng nhận"]
+
+    subgraph transferBoundary["3.0 Chuyển tiền nội bộ"]
+        direction TB
+        resolve(["3.1 Tra cứu tài khoản nhận"])
+        protect(["3.2 Kiểm tra request và phiên"])
+        verifyUser(["3.3 Kiểm tra người dùng và mật khẩu giao dịch"])
+        idempotency(["3.4 Kiểm tra idempotency"])
+        validateAccounts(["3.5 Kiểm tra tài khoản và số dư"])
+        persist(["3.6 Ghi giao dịch nguyên tử"])
+        notify(["3.7 Gửi sự kiện sau commit"])
+        failureAudit(["3.8 Ghi nhận lỗi nghiệp vụ"])
+
+        users[("D1 AspNetUsers")]
+        accounts[("D2 BankAccounts")]
+        transactions[("D3 FinancialTransactions")]
+        audit[("D4 AuditLogs")]
+        sqlSessions[("D5 UserSessions")]
+        redisSessions[("D6 Redis Active Session")]
+    end
+
+    sender -->|"Số tài khoản nhận"| resolve
+    resolve <-->|"Tài khoản, tên chủ và trạng thái"| accounts
+    resolve -->|"Tên người nhận hoặc không tìm thấy"| sender
+
+    sender -->|"JWT, Idempotency-Key và yêu cầu chuyển tiền"| protect
+    protect <-->|"Phiên SQL còn hiệu lực"| sqlSessions
+    protect <-->|"SessionId đang hoạt động"| redisSessions
+    protect -->|"Yêu cầu hợp lệ"| verifyUser
+
+    verifyUser <-->|"Trạng thái và TransactionPasswordHash"| users
+    verifyUser -->|"Yêu cầu đã xác minh"| idempotency
+    verifyUser -->|"Lỗi xác thực hoặc nghiệp vụ"| failureAudit
+
+    idempotency <-->|"Key, request hash và giao dịch cũ"| transactions
+    idempotency -->|"Kết quả cũ nếu cùng payload"| sender
+    idempotency -->|"Yêu cầu mới"| validateAccounts
+    idempotency -->|"Conflict nếu key khác payload"| failureAudit
+
+    validateAccounts <-->|"Nguồn, đích, trạng thái và số dư"| accounts
+    validateAccounts -->|"Dữ liệu đủ điều kiện"| persist
+    validateAccounts -->|"Lỗi tài khoản hoặc số dư"| failureAudit
+
+    persist -->|"Trừ nguồn và cộng đích"| accounts
+    persist -->|"Thêm giao dịch Transfer"| transactions
+    persist -->|"Audit TRANSFER thành công"| audit
+    persist -->|"TransferResponse sau commit"| sender
+    persist -->|"Giao dịch đã commit"| notify
+
+    failureAudit -->|"Audit lỗi nếu có thể"| audit
+    failureAudit -->|"ProblemDetails"| sender
+
+    notify <-->|"Phiên nhận sự kiện"| redisSessions
+    notify <-->|"Phiên SQL còn hiệu lực"| sqlSessions
+    notify -->|"BalanceChanged và TransactionReceived"| sender
+    notify -->|"BalanceChanged và TransactionReceived"| recipient
+
+    classDef actor fill:#FFFFFF,stroke:#444444,color:#111111;
+    classDef process fill:#F8F1E2,stroke:#B88A2A,color:#111111;
+    classDef store fill:#EFEFEF,stroke:#666666,color:#111111;
+    class sender,recipient actor;
+    class resolve,protect,verifyUser,idempotency,validateAccounts,persist,notify,failureAudit process;
+    class users,accounts,transactions,audit,sqlSessions,redisSessions store;

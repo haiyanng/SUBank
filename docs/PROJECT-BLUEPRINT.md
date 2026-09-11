@@ -369,8 +369,7 @@ Các chức năng sau không thuộc phiên bản hiện tại:
 - Foreign exchange.
 - Interest calculation.
 
-Các chức năng này có thể được xem xét trong hướng phát triển tương lai nhưng không được mô tả là
-chức năng hiện có của SUBank.
+Các chức năng này có thể được xem xét trong hướng phát triển tương lai.
 
 ## 18. Tài liệu liên quan
 
@@ -391,5 +390,4 @@ chức năng hiện có của SUBank.
 SUBank là ứng dụng phục vụ mục đích học tập và demo.
 
 Project mô phỏng một số nguyên tắc thường gặp trong hệ thống ngân hàng như authentication,
-authorization, transaction atomicity, audit và session management, nhưng không được coi là core
-banking system hoàn chỉnh hoặc sản phẩm đủ điều kiện triển khai cho ngân hàng thực tế.
+authorization, transaction atomicity, audit và session management, không phải core banking system hoàn chỉnh.

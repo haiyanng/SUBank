@@ -87,9 +87,7 @@ Health Check thành công được ghi ở mức `Debug`.
 
 SUBank sử dụng header:
 
-```text
 X-Correlation-ID
-```
 
 để liên kết request, error response, Application Log và Audit Log.
 
@@ -127,7 +125,6 @@ Correlation ID chỉ dùng để tra cứu và liên kết log, không dùng đ�
 
 Các property được lọc gồm những nhóm như:
 
-```text
 Password
 TransactionPassword
 AccessToken
@@ -144,7 +141,6 @@ IdentityCardNumber
 AccountNumber
 Phone
 Email
-```
 
 Ngoài ra request logging không đọc body hoặc credential từ request.
 
@@ -200,9 +196,8 @@ Application Log
 
 Audit Log
 → user nào đã thực hiện hành động gì?
-```
 
-Không nên lưu các sự kiện nghiệp vụ quan trọng chỉ bằng Application Log.
+Không nên các sự kiện nghiệp vụ quan trọng bằng Application Log.
 
 ## Error Handling
 
@@ -231,6 +226,3 @@ Application Log hiện chỉ được triển khai ở ASP.NET Core API.
 
 Blazor WebAssembly chạy trong browser và chưa có hệ thống tập trung để gửi Client log về server.
 
-Rolling file cũng không phải cơ chế backup.
-
-Backup dữ liệu SQL Server và Audit Log được xử lý như một vấn đề vận hành riêng, không thuộc trách nhiệm của Application Log.

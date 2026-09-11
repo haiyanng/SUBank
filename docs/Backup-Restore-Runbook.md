@@ -16,11 +16,7 @@ Tài liệu này mô tả quy trình cơ bản. Nó không khẳng định môi 
 
 ## Development
 
-Development sử dụng database:
-
-```text
-SUBankV2
-```
+Development sử dụng database: SUBankV2
 
 API có thể tự chạy Migration và Seed Data khi Development configuration cho phép.
 

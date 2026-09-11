@@ -1,0 +1,43 @@
+flowchart LR
+    %% Kiến trúc triển khai và quan hệ giữa các project hiện tại
+    subgraph clientSide["Phía người dùng"]
+        browser["Trình duyệt"]
+        client["SUBank.Client<br/>Blazor WebAssembly + Bootstrap"]
+    end
+
+    subgraph serverSide["Máy chủ ứng dụng nguyên khối"]
+        api["SUBank.Api<br/>ASP.NET Core Web API + SignalR"]
+        application["SUBank.Application<br/>Use case và abstraction"]
+        infrastructure["SUBank.Infrastructure<br/>Identity, EF Core, phiên, PDF và QR"]
+        domain["SUBank.Domain<br/>Entity, enum và quy tắc cốt lõi"]
+        contracts["SUBank.Contracts<br/>DTO dùng chung"]
+    end
+
+    subgraph dataStores["Hạ tầng dữ liệu"]
+        sql[("SQL Server<br/>Dữ liệu nghiệp vụ và Identity")]
+        redis[("Redis<br/>Phiên đang hoạt động")]
+        logs[("Application log<br/>Tệp JSON luân phiên")]
+    end
+
+    browser -->|"Tải ứng dụng"| client
+    client <-->|"HTTPS REST/JSON và SignalR"| api
+
+    client -. "Tham chiếu project" .-> contracts
+    api -. "Tham chiếu project" .-> application
+    api -. "Tham chiếu project" .-> infrastructure
+    api -. "Tham chiếu project" .-> contracts
+    application -. "Tham chiếu project" .-> domain
+    application -. "Tham chiếu project" .-> contracts
+    infrastructure -. "Triển khai abstraction" .-> application
+    infrastructure -. "Tham chiếu project" .-> domain
+
+    infrastructure -->|"EF Core"| sql
+    infrastructure -->|"StackExchange.Redis"| redis
+    api -->|"Serilog"| logs
+
+    classDef ui fill:#F8F1E2,stroke:#B88A2A,color:#111111;
+    classDef service fill:#FFFFFF,stroke:#444444,color:#111111;
+    classDef store fill:#EFEFEF,stroke:#666666,color:#111111;
+    class browser,client ui;
+    class api,application,infrastructure,domain,contracts service;
+    class sql,redis,logs store;

@@ -1,7 +1,4 @@
-# SUBank 3S
-
-SUBank 3S là ứng dụng Online Banking được xây dựng bằng .NET 10, ASP.NET Core Web API, Blazor WebAssembly, Bootstrap, SQL Server và ASP.NET Core Identity.
-
+# SUBank 3S online banking
 ## Tech Stack
 
 * Backend: ASP.NET Core 10 Web API
@@ -21,9 +18,7 @@ SUBank 3S là ứng dụng Online Banking được xây dựng bằng .NET 10, A
 
 Nếu máy chưa trust HTTPS certificate:
 
-```powershell
 dotnet dev-certs https --trust
-```
 
 Database Development mặc định là `SUBankV2`.
 
@@ -33,49 +28,35 @@ API tự động áp dụng migration và tạo dữ liệu demo khi khởi đ�
 
 ### 1. Restore và build
 
-```powershell
 dotnet restore
 dotnet build SUBank.sln
 dotnet test SUBank.sln --no-build
-```
 
 ### 2. Chạy API
 
-```powershell
 dotnet run --project src/SUBank.Api --launch-profile https
-```
 
-API:
+API: https://localhost:7247
 
-`https://localhost:7247`
-
-Swagger:
-
-`https://localhost:7247/swagger`
+Swagger: https://localhost:7247/swagger
 
 ### 3. Chạy Blazor Client
 
 Mở terminal khác:
 
-```powershell
 dotnet run --project client/SUBank.Client --launch-profile https
-```
 
-Client:
-
-`https://localhost:7081`
+Client: https://localhost:7081
 
 ## Reset database Development
 
 > Lệnh dưới đây sẽ xóa toàn bộ dữ liệu trong database `SUBankV2`.
 
-```powershell
 dotnet ef database drop --force --project src/SUBank.Infrastructure --startup-project src/SUBank.Api
 
 dotnet ef database update --project src/SUBank.Infrastructure --startup-project src/SUBank.Api
 
 dotnet run --project src/SUBank.Api --launch-profile https
-```
 
 Sau khi seed, hệ thống có:
 
@@ -154,23 +135,17 @@ Customer bị khóa bởi Admin sẽ không thể tiếp tục sử dụng prote
 
 Trong Development, API ghi log tại:
 
-```text
 src/SUBank.Api/logs/subank-api-YYYYMMDD.log
-```
 
 Theo dõi log bằng:
 
-```powershell
 Get-Content -Encoding UTF8 src/SUBank.Api/logs/subank-api-*.log -Wait
-```
 
 ## Health Check
 
-```text
 /health/live
 /health/ready
 /health
-```
 
 Health check được sử dụng để kiểm tra trạng thái API, SQL Server và Redis.
 

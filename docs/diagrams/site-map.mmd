@@ -1,0 +1,61 @@
+flowchart TD
+    site["SUBank.Client"]
+
+    subgraph publicPages["Trang công khai"]
+        login["Đăng nhập<br/>/ và /login"]
+        forbidden["Không có quyền<br/>/403 và /forbidden"]
+        notFound["Không tìm thấy trang<br/>/not-found"]
+    end
+
+    subgraph customerPages["Khu vực Customer"]
+        accounts["Trang chủ tài khoản<br/>/accounts"]
+        transfer["Chuyển tiền<br/>/transfer"]
+        qr["QR<br/>/qr"]
+        transactions["Lịch sử giao dịch<br/>/transactions"]
+        accountTransactions["Giao dịch theo tài khoản<br/>/transactions/{AccountNumber}"]
+        transactionDetail["Chi tiết giao dịch<br/>/transaction/{ReferenceNo}"]
+        statements["Sao kê<br/>/statements"]
+        profile["Thông tin cá nhân<br/>/profile"]
+        aiSupport["AI hỗ trợ - placeholder<br/>/ai-support"]
+    end
+
+    subgraph tellerPages["Khu vực Teller"]
+        cashDeposit["Nộp tiền mặt<br/>/staff/deposit"]
+    end
+
+    subgraph adminPages["Khu vực Admin"]
+        users["Quản lý người dùng<br/>/staff/users"]
+        audit["Nhật ký kiểm toán<br/>/staff/audit"]
+    end
+
+    site --> login
+    site --> forbidden
+    site --> notFound
+
+    login -->|"Customer"| accounts
+    login -->|"Teller"| cashDeposit
+    login -->|"Admin"| users
+
+    accounts --> transfer
+    accounts --> qr
+    accounts --> transactions
+    accounts --> statements
+    accounts --> profile
+    accounts --> aiSupport
+    transactions --> accountTransactions
+    transactions --> transactionDetail
+    accountTransactions --> transactionDetail
+    qr -. "Điền sẵn dữ liệu" .-> transfer
+    transfer -. "Mở trang quét QR" .-> qr
+    users --> audit
+
+    accounts -. "Sai role" .-> forbidden
+    cashDeposit -. "Sai role" .-> forbidden
+    users -. "Sai role" .-> forbidden
+
+    classDef public fill:#FFFFFF,stroke:#666666,color:#111111;
+    classDef customer fill:#F8F1E2,stroke:#B88A2A,color:#111111;
+    classDef staff fill:#EFEFEF,stroke:#444444,color:#111111;
+    class login,forbidden,notFound public;
+    class accounts,transfer,qr,transactions,accountTransactions,transactionDetail,statements,profile,aiSupport customer;
+    class cashDeposit,users,audit staff;

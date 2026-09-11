@@ -6,7 +6,6 @@
 
 Trong Development:
 
-```text
 Blazor Client
 https://localhost:7081
 
@@ -18,7 +17,6 @@ SUBankV2
 
 Redis
 localhost:6379
-```
 
 Client và API chạy riêng để thuận tiện phát triển.
 
@@ -33,7 +31,6 @@ Khi publish, ASP.NET Core API đồng thời publish Blazor WebAssembly Client v
 
 Vì vậy có thể triển khai SUBank dưới cùng một HTTPS origin:
 
-```text
 /
 → Blazor WebAssembly
 
@@ -42,7 +39,6 @@ Vì vậy có thể triển khai SUBank dưới cùng một HTTPS origin:
 
 /hubs/*
 → SignalR
-```
 
 Không cần deploy Client thành một application riêng nếu sử dụng topology này.
 
@@ -50,9 +46,7 @@ Không cần deploy Client thành một application riêng nếu sử dụng top
 
 Lệnh publish:
 
-```bash
 dotnet publish src/SUBank.Api/SUBank.Api.csproj -c Release
-```
 
 `SUBank.Api.csproj` có build target tự publish `SUBank.Client` và copy `wwwroot` vào artifact của API.
 
@@ -60,32 +54,23 @@ dotnet publish src/SUBank.Api/SUBank.Api.csproj -c Release
 
 Các cấu hình Production quan trọng gồm:
 
-```text
 ConnectionStrings__DefaultConnection
 Jwt__SigningKey
 ActiveSession__RedisConnection
 ActiveSession__KeyPrefix
 AllowedHosts
-```
 
 Secret thật không được ghi trực tiếp vào repository.
 
 JWT Signing Key phải có ít nhất 32 byte.
 
-Production không cho phép:
-
-```text
-AllowedHosts = *
-```
+Production không cho phép: AllowedHosts = *
 
 ## Migration và Seed Data
-
 Trong Development:
 
-```text
 ApplyMigrationsOnStartup = true
 SeedDemoData = true
-```
 
 có thể được sử dụng để tạo database demo nhanh.
 
@@ -99,30 +84,23 @@ Không chạy Demo Seed Data trên Production.
 
 Ngoài Development, API bật:
 
-```text
 HSTS
 HTTPS Redirection
-```
 
 Nếu ứng dụng chạy sau reverse proxy, có thể bật Forwarded Headers.
 
 Khi bật:
 
-```text
 DeploymentSecurity__UseForwardedHeaders=true
-```
 
 phải khai báo các proxy tin cậy trong:
 
-```text
 DeploymentSecurity__KnownProxies
-```
 
 ## Health Check
 
 SUBank có các endpoint:
 
-```text
 /health/live
 → kiểm tra process API
 
@@ -131,7 +109,6 @@ SUBank có các endpoint:
 
 /health
 → readiness tương tự /health/ready
-```
 
 `/health/live` không phụ thuộc SQL hoặc Redis.
 
