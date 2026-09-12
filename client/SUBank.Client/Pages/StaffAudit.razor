@@ -2,7 +2,7 @@
 @inject ApiSession Session
 
 <PageTitle>Nhật ký kiểm toán · SUBank</PageTitle>
-<div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Nhật ký kiểm toán</h1><p>Theo dõi các sự kiện bảo mật và nghiệp vụ quan trọng.</p></div></div>
+<div class="page-heading"><div><div class="eyebrow">Khu vực quản trị</div><h1 class="mb-1">Nhật ký kiểm toán</h1></div></div>
 @if (error is not null) { <div class="alert alert-danger"><p class="mb-2">@error</p><button class="btn btn-outline-danger btn-sm" type="button" disabled="@loading" @onclick="LoadAsync">Thử lại</button></div> }
 else if (items is null) { <div class="loading-state">Đang tải nhật ký...</div> }
 else if (items.Count == 0) { <div class="empty-state">Chưa có sự kiện audit.</div> }
